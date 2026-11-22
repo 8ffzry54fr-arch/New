@@ -27,7 +27,7 @@
 <style>
   :root{
     --bg:#f6f1e7; --paper:#fffdf8; --ink:#2b2620; --muted:#8a8073; --line:#e6ddcc;
-    --accent:#b4532a; --accent-soft:#f6e1d3; --bar:#2b2620; --bar-ink:#fffdf8;
+    --accent:#b4532a; --accent-soft:#f6e1d3; --bar:#2b2620; --bar-ink:#fffdf8; --fs:19px;
   }
   @media (prefers-color-scheme: dark){
     :root{ --bg:#16140f; --paper:#1e1b16; --ink:#e9e2d6; --muted:#9a8f80; --line:#2f2a22;
@@ -35,13 +35,17 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif}
-  header{max-width:760px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 20px 8px;display:flex;align-items:center;gap:12px}
+  header{max-width:760px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 20px 8px;display:flex;align-items:center;gap:10px}
   header h1{font-family:Literata,serif;font-weight:600;font-size:22px;margin:0;flex:1}
   .btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;
     padding:9px 14px;font:500 14px Inter,sans-serif;cursor:pointer}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .iconbtn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;width:40px;height:38px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .iconbtn svg{width:20px;height:20px}
   main{max-width:760px;margin:0 auto;padding:8px 20px 220px}
-  #drop{border:2px dashed var(--line);border-radius:18px;background:var(--paper);padding:36px 20px;
-    text-align:center;cursor:pointer}
+  main.reading{padding-bottom:60px}
+  #drop{border:2px dashed var(--line);border-radius:18px;background:var(--paper);padding:36px 20px;text-align:center;cursor:pointer}
   #drop .big{font-family:Literata,serif;font-size:20px;margin:10px 0 6px}
   #drop .small{color:var(--muted);font-size:14px}
   #drop svg{width:44px;height:44px;color:var(--accent)}
@@ -54,17 +58,31 @@
   .book .bar{height:4px;background:var(--line);border-radius:4px;margin-top:8px;overflow:hidden}
   .book .bar i{display:block;height:100%;background:var(--accent)}
   .book .del{background:none;border:none;color:var(--muted);font-size:20px;padding:6px 8px;cursor:pointer}
-  #status{color:var(--muted);font-size:14px;margin:14px 2px;min-height:20px}
+  #status{color:var(--muted);font-size:14px;margin:12px 2px;min-height:20px}
   #dl{display:none;height:6px;background:var(--line);border-radius:6px;overflow:hidden;margin:-6px 2px 12px}
   #dl i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
-  #meta{margin:4px 2px 14px}
+  #meta{margin:4px 2px 12px}
   #meta .title{font-family:Literata,serif;font-size:19px;font-weight:600;word-break:break-word}
   #meta .sub{color:var(--muted);font-size:13px;margin-top:3px}
+  .seg{display:flex;background:var(--line);border-radius:12px;padding:3px;gap:3px;margin-bottom:10px}
+  .seg button{flex:1;border:none;background:transparent;color:var(--ink);font:500 14px Inter,sans-serif;padding:9px 6px;border-radius:9px;cursor:pointer}
+  .seg button.on{background:var(--paper);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+  .seg.small button{font-size:13px;padding:7px 4px}
+  .row{display:flex;gap:10px;align-items:center}
+  .row .lbl{font-size:13px;color:var(--muted);width:64px;flex:none}
+  .row .seg{flex:1}
+  #sumOpts{margin-bottom:6px}
+  #fontRow{justify-content:flex-end;margin:-2px 0 10px;gap:8px}
+  #fontRow .lbl{width:auto;flex:1}
   #text{background:var(--paper);border:1px solid var(--line);border-radius:16px;
-    padding:24px 22px;font-family:Literata,serif;font-size:19px;line-height:1.75}
+    padding:24px 22px;font-family:Literata,serif;font-size:var(--fs);line-height:1.75}
   #text p{margin:0 0 1em}
+  #text h3{font-family:Literata,serif;font-size:1.05em;font-weight:600;margin:1.4em 0 .6em;color:var(--accent)}
+  #text h3:first-child{margin-top:0}
+  #text .empty{color:var(--muted);font-family:Inter,sans-serif;font-size:15px}
   .s{cursor:pointer;border-radius:4px}
   .s.on{background:var(--accent-soft);box-shadow:0 0 0 3px var(--accent-soft)}
+  .reading .s.on{background:none;box-shadow:none}
   #player{position:fixed;left:0;right:0;bottom:0;background:var(--bar);color:var(--bar-ink);
     padding:12px 16px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -6px 24px rgba(0,0,0,.15)}
   .pwrap{max-width:760px;margin:0 auto}
@@ -80,10 +98,17 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .opts{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;font-size:13px}
   .opts label{display:flex;align-items:center;gap:6px;opacity:.9}
-  select{background:transparent;color:var(--bar-ink);border:1px solid rgba(255,255,255,.25);border-radius:8px;
+  #player select{background:transparent;color:var(--bar-ink);border:1px solid rgba(255,255,255,.25);border-radius:8px;
     padding:6px 8px;font:13px Inter,sans-serif;max-width:200px}
-  select option{color:#000}
+  #player select option{color:#000}
   input[type=range]{accent-color:var(--accent)}
+  #sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+  #sheet .card{background:var(--paper);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:22px 20px calc(22px + env(safe-area-inset-bottom))}
+  #sheet h3{font-family:Literata,serif;margin:0 0 8px;font-size:19px}
+  #sheet p{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 12px}
+  #sheet input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:15px Inter,sans-serif;
+    background:var(--bg);color:var(--ink);margin-bottom:12px}
+  #sheet .acts{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
   .hidden{display:none!important}
 </style>
 </head>
@@ -91,9 +116,10 @@
 <header>
   <h1>Leitor em Voz Alta</h1>
   <button class="btn hidden" id="libBtn">Biblioteca</button>
+  <button class="iconbtn" id="setBtn" aria-label="Configurações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </header>
 
-<main>
+<main id="main">
   <section id="home">
     <div id="drop">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2.5z"/><path d="M6 21h12"/><path d="M9 7h6M9 11h4"/></svg>
@@ -105,13 +131,39 @@
     <div id="lib"></div>
   </section>
 
-  <div id="status"></div>
-  <div id="dl"><i></i></div>
-
   <section id="reader" class="hidden">
     <div id="meta"><div class="title" id="mTitle"></div><div class="sub" id="mSub"></div></div>
-    <div id="text"></div>
+
+    <div class="seg" id="segContent">
+      <button data-v="full">Livro completo</button>
+      <button data-v="sum">Resumo</button>
+    </div>
+    <div id="sumOpts" class="hidden">
+      <div class="row"><span class="lbl">Tamanho</span>
+        <div class="seg small" id="segLevel">
+          <button data-v="c">Curto</button><button data-v="m">Médio</button><button data-v="l">Longo</button>
+        </div>
+      </div>
+      <div class="row"><span class="lbl">Feito por</span>
+        <div class="seg small" id="segEngine">
+          <button data-v="auto">Automático</button><button data-v="ai">IA (Claude)</button>
+        </div>
+      </div>
+    </div>
+    <div class="seg" id="segMode">
+      <button data-v="read">Ler</button>
+      <button data-v="listen">Ouvir</button>
+    </div>
+    <div class="row" id="fontRow">
+      <span class="lbl" id="infoLine"></span>
+      <button class="btn" id="fontDown" aria-label="Diminuir letra">A−</button>
+      <button class="btn" id="fontUp" aria-label="Aumentar letra">A+</button>
+    </div>
   </section>
+
+  <div id="status"></div>
+  <div id="dl"><i></i></div>
+  <div id="text" class="hidden"></div>
 </main>
 
 <div id="player" class="hidden">
@@ -140,20 +192,38 @@
   </div>
 </div>
 
+<div id="sheet" class="hidden">
+  <div class="card">
+    <h3>Resumo com IA (Claude)</h3>
+    <p>O resumo automático é grátis e feito no próprio celular. O resumo com IA fica mais bem escrito, mas precisa de uma chave da API da Anthropic (console.anthropic.com), que é paga por uso.</p>
+    <p><b>Atenção:</b> ao usar o resumo com IA, o texto do livro é enviado à Anthropic para ser resumido. A chave fica salva só neste aparelho.</p>
+    <input id="keyInput" type="password" placeholder="Cole aqui sua chave (sk-ant-...)" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="acts">
+      <button class="btn" id="keyDel">Remover chave</button>
+      <button class="btn" id="keyClose">Fechar</button>
+      <button class="btn primary" id="keySave">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
+import { deriveSections, buildChunks, summarize, RATIOS } from './texto.js?v=2';
+
 const $ = id => document.getElementById(id);
-const AHEAD = 8;               // quantos trechos ficam prontos à frente
-const CHUNK = 320;             // tamanho alvo de cada trecho (caracteres)
+const AHEAD = 8;
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
 const PIPER = 'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize';
+const AI_MODEL = 'claude-haiku-5-5';
 const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=';
+const LEVEL_NAME = { c: 'curto', m: 'médio', l: 'longo' };
 
 if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const ls = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
-  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
 };
 
 // ---------------- Banco de livros (IndexedDB) ----------------
@@ -183,15 +253,20 @@ const db = {
 try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(e){}
 
 // ---------------- Estado ----------------
-let book = null, chunks = [], idx = 0, playing = false;
+let book = null, chunks = [], idx = 0, playing = false, loadToken = 0;
+const view = Object.assign({ content: 'full', level: 'm', engine: 'auto', mode: 'listen' }, ls.get('view', {}));
 let voiceId = ls.get('voice', 'pt_BR-faber-medium');
 let rate = ls.get('rate', 1);
+let fs = ls.get('fs', 19);
 $('voice').value = voiceId; $('rate').value = String(rate);
+document.documentElement.style.setProperty('--fs', fs + 'px');
+
+const posKey = () => view.content === 'full' ? 'full' : `sum-${view.engine}-${view.level}`;
 
 const audio = new Audio();
 audio.preload = 'auto';
 let loadedIdx = -1, waiting = false, unlocked = false;
-const cache = new Map();       // idx -> blob URL
+const cache = new Map();
 let gen = 0, pumping = false;
 
 // ---------------- Voz neural (Piper) ----------------
@@ -249,7 +324,6 @@ async function pump(){
     if (playing && g !== gen) pump();
   }
 }
-
 function prune(){
   for (const [i, url] of cache) if (i < idx - 1 || i > idx + AHEAD + 4){ URL.revokeObjectURL(url); cache.delete(i); }
 }
@@ -266,13 +340,11 @@ function startCurrent(){
   audio.play().catch(e => { console.warn(e); if (e.name === 'NotAllowedError'){ playing = false; setIcon(); setStatus('Toque em ▶ para continuar.'); } });
   prune(); pump();
 }
-
 function unlock(){
   if (unlocked) return;
   unlocked = true;
   try{ audio.src = SILENT; audio.play().catch(() => {}); }catch(e){}
 }
-
 function play(){
   if (!chunks.length) return;
   unlock();
@@ -291,13 +363,11 @@ function jump(i){
   if (playing) startCurrent(); else { audio.pause(); mark(); }
   save();
 }
-
 audio.addEventListener('ended', () => {
   if (!playing || audio.src === SILENT) return;
-  if (idx + 1 >= chunks.length){ pause(); idx = 0; save(true); setStatus('Fim do livro 🎉'); mark(); return; }
+  if (idx + 1 >= chunks.length){ pause(); idx = 0; save(true); setStatus(view.content === 'full' ? 'Fim do livro 🎉' : 'Fim do resumo 🎉'); mark(); return; }
   idx++; save(); startCurrent();
 });
-
 function setIcon(){ $('playIcon').innerHTML = playing ? PAUSE : PLAY; }
 function setBusy(b){ $('play').classList.toggle('busy', b && playing); }
 
@@ -305,7 +375,7 @@ function updateMedia(){
   if (!('mediaSession' in navigator) || !book) return;
   const ms = navigator.mediaSession;
   try{
-    ms.metadata = new MediaMetadata({ title: book.title, artist: 'Leitor em Voz Alta',
+    ms.metadata = new MediaMetadata({ title: book.title + (view.content === 'sum' ? ' (resumo)' : ''), artist: 'Leitor em Voz Alta',
       artwork: [{src: 'icon-512.png', sizes: '512x512', type: 'image/png'}] });
   }catch(e){}
   ms.playbackState = playing ? 'playing' : 'paused';
@@ -354,37 +424,121 @@ async function readEPUB(buf){
   const manifest = {};
   opf.querySelectorAll('manifest > item').forEach(i => manifest[i.getAttribute('id')] = i.getAttribute('href'));
   const ids = [...opf.querySelectorAll('spine > itemref')].map(i => i.getAttribute('idref'));
-  const parts = [];
+  const sections = [];
   for (let n = 0; n < ids.length; n++){
     const href = manifest[ids[n]]; if (!href) continue;
     const f = zip.file(decodeURIComponent(base + href.split('#')[0])); if (!f) continue;
     setStatus(`Lendo capítulo ${n + 1} de ${ids.length}…`);
     const doc = parser.parseFromString(await f.async('text'), 'text/html');
     doc.querySelectorAll('script,style,nav').forEach(e => e.remove());
+    const hEl = doc.body.querySelector('h1,h2,h3');
+    const title = hEl ? hEl.textContent.replace(/\s+/g, ' ').trim().slice(0, 90) : '';
+    if (hEl) hEl.remove();
     const blocks = [...doc.body.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote,div')]
       .filter(e => !e.querySelector('p,h1,h2,h3,h4,h5,h6,li,div'))
       .map(e => e.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean);
-    parts.push(blocks.length ? blocks.join('\n\n') : doc.body.textContent);
+    const text = blocks.length ? blocks.join('\n\n') : doc.body.textContent.trim();
+    if (text.trim()) sections.push({ title, text });
   }
-  return { text: parts.join('\n\n'), title: tEl && tEl.textContent.trim() };
+  return { sections, title: tEl && tEl.textContent.trim() };
 }
 
-function split(text){
-  const paras = text.split(/\n\s*\n|\n(?=[A-ZÀ-Ú“"—–-])/).map(p => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
+function sectionsOf(b){
+  if (b.sections && b.sections.length) return b.sections;
+  return b._derived ||= deriveSections(b.text);
+}
+
+// ---------------- Resumo com IA ----------------
+async function aiSummarize(b, level, token){
+  const key = ls.get('apiKey', '');
+  const secs = sectionsOf(b).filter(s => s.text.split(/\s+/).length >= 80);
+  const share = { c: 0.04, m: 0.08, l: 0.15 }[level];
   const out = [];
-  paras.forEach((p, pi) => {
-    const sents = p.match(/[^.!?…]+(?:[.!?…]+["”»')\]]*|$)\s*/g) || [p];
-    let buf = '';
-    const push = () => { if (buf.trim()) out.push({t: buf.trim(), p: pi}); buf = ''; };
-    for (const s of sents){
-      if ((buf + s).length > CHUNK && buf) push();
-      if (s.length > CHUNK * 1.4){
-        s.split(/(?<=[,;:])\s+/).forEach(piece => { if ((buf + piece).length > CHUNK && buf) push(); buf += piece + ' '; });
-      } else buf += s;
+  for (let i = 0; i < secs.length; i++){
+    if (token !== loadToken) return null;
+    setStatus(`Resumindo com IA: parte ${i + 1} de ${secs.length}…`);
+    showDl(i / secs.length);
+    const s = secs[i];
+    const wc = s.text.split(/\s+/).length;
+    const target = Math.max(40, Math.min(700, Math.round(wc * share)));
+    const body = s.text.length > 300000 ? s.text.slice(0, 300000) : s.text;
+    const prompt = `Você vai resumir uma parte de um livro para ser ouvida em áudio.\n` +
+      `Livro: "${b.title}"${s.title ? `\nParte: "${s.title}"` : ''}\n\n` +
+      `Escreva em português do Brasil um resumo em prosa corrida com cerca de ${target} palavras. ` +
+      `Mantenha as ideias principais, os acontecimentos e os nomes importantes, na ordem em que aparecem. ` +
+      `Não use títulos, listas, negrito nem comentários sobre o texto; responda só com o resumo.\n\n<texto>\n${body}\n</texto>`;
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: Math.min(4000, target * 3 + 200),
+        messages: [{ role: 'user', content: prompt }] })
+    });
+    if (!r.ok){
+      const e = await r.json().catch(() => ({}));
+      throw new Error((e.error && e.error.message) || ('erro ' + r.status));
     }
-    push();
-  });
-  return out.filter(c => /[\p{L}\p{N}]/u.test(c.t));
+    const j = await r.json();
+    const text = (j.content || []).map(c => c.text || '').join('').trim();
+    if (text) out.push({ title: s.title, text, synthetic: s.synthetic });
+  }
+  showDl(null);
+  return out;
+}
+
+// ---------------- Conteúdo (livro ou resumo) ----------------
+async function loadContent(){
+  if (!book) return;
+  const token = ++loadToken;
+  if (playing) pause();
+  clearCache(); gen++;
+  chunks = []; render();
+  let secs = null;
+  try{
+    if (view.content === 'full'){
+      secs = sectionsOf(book);
+    } else if (view.engine === 'ai'){
+      book.ai ||= {};
+      if (!book.ai[view.level]){
+        $('text').innerHTML = '<div class="empty">Gerando o resumo com IA. Em livros grandes isso pode levar alguns minutos…</div>';
+        const res = await aiSummarize(book, view.level, token);
+        if (token !== loadToken) return;
+        book.ai[view.level] = res;
+        db.put(stripDerived(book));
+      }
+      secs = book.ai[view.level];
+    } else {
+      setStatus('Montando o resumo…');
+      await new Promise(r => setTimeout(r, 30));
+      secs = summarize(sectionsOf(book), RATIOS[view.level]);
+    }
+  }catch(e){
+    console.error(e);
+    if (token !== loadToken) return;
+    showDl(null);
+    setStatus('Não consegui fazer o resumo com IA (' + e.message + '). Mostrando o resumo automático.');
+    view.engine = 'auto'; ls.set('view', view); syncSegs();
+    secs = summarize(sectionsOf(book), RATIOS[view.level]);
+  }
+  if (token !== loadToken) return;
+  chunks = buildChunks(secs || [], { showSynthetic: view.content === 'sum' });
+  book.pos ||= { full: book.idx || 0 };
+  idx = Math.min(book.pos[posKey()] || 0, Math.max(chunks.length - 1, 0));
+  render();
+  if (!chunks.length) $('text').innerHTML = '<div class="empty">Não há texto suficiente para montar este resumo.</div>';
+  if (/Montando|Resumindo/.test($('status').textContent)) setStatus('');
+  updateInfo(); mark(true); updateMedia();
+}
+function stripDerived(b){ const c = Object.assign({}, b); delete c._derived; return c; }
+
+function updateInfo(){
+  const chars = chunks.reduce((a, c) => a + c.t.length, 0);
+  const mins = Math.max(1, Math.round(chars / (14 * rate) / 60));
+  const words = chunks.reduce((a, c) => a + c.t.split(/\s+/).length, 0);
+  const t = view.mode === 'listen'
+    ? (mins >= 60 ? `≈ ${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, '0')} de áudio` : `≈ ${mins} min de áudio`)
+    : `${words.toLocaleString('pt-BR')} palavras`;
+  $('infoLine').textContent = view.content === 'sum' ? `Resumo ${LEVEL_NAME[view.level]} · ${t}` : t;
 }
 
 // ---------------- Telas ----------------
@@ -396,23 +550,25 @@ function render(){
   let cur = -1, para;
   const frag = document.createDocumentFragment();
   chunks.forEach((c, i) => {
-    if (c.p !== cur){ para = document.createElement('p'); frag.appendChild(para); cur = c.p; }
     const s = document.createElement('span'); s.className = 's'; s.dataset.i = i; s.textContent = c.t + ' ';
+    if (c.h){ const h = document.createElement('h3'); h.appendChild(s); frag.appendChild(h); cur = c.p; return; }
+    if (c.p !== cur){ para = document.createElement('p'); frag.appendChild(para); cur = c.p; }
     para.appendChild(s);
   });
   box.appendChild(frag);
   $('seek').max = Math.max(chunks.length - 1, 0);
+  lastOn = null;
 }
 
 let lastOn = null;
-function mark(){
+function mark(force){
   if (lastOn) lastOn.classList.remove('on');
   const el = $('text').querySelector(`.s[data-i="${idx}"]`);
   if (el){
     el.classList.add('on'); lastOn = el;
-    if (!document.hidden){
+    if (!document.hidden && (view.mode === 'listen' || force)){
       const r = el.getBoundingClientRect();
-      if (r.top < 80 || r.bottom > innerHeight - 230) el.scrollIntoView({block: 'center', behavior: 'smooth'});
+      if (force || r.top < 80 || r.bottom > innerHeight - 230) el.scrollIntoView({block: force && view.mode === 'read' ? 'start' : 'center', behavior: force ? 'auto' : 'smooth'});
     }
   }
   $('seek').value = idx;
@@ -426,47 +582,61 @@ let saveT;
 function save(now){
   if (!book) return;
   clearTimeout(saveT);
-  const f = () => { book.idx = idx; book.total = chunks.length; book.updated = Date.now(); ls.set('lastBook', book.id); db.put(book); };
+  const f = () => {
+    book.pos ||= {};
+    book.pos[posKey()] = idx;
+    if (view.content === 'full'){ book.idx = idx; book.total = chunks.length; }
+    book.updated = Date.now(); ls.set('lastBook', book.id); db.put(stripDerived(book));
+  };
   now ? f() : (saveT = setTimeout(f, 800));
 }
 
+function syncSegs(){
+  const set = (id, v) => $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  set('segContent', view.content); set('segLevel', view.level); set('segEngine', view.engine); set('segMode', view.mode);
+  $('sumOpts').classList.toggle('hidden', view.content !== 'sum');
+  const reading = view.mode === 'read';
+  $('player').classList.toggle('hidden', reading || !book);
+  $('main').classList.toggle('reading', reading);
+}
+
 async function showLibrary(){
+  loadToken++;
   if (playing) pause();
   book = null; chunks = []; clearCache();
-  $('reader').classList.add('hidden'); $('player').classList.add('hidden');
+  $('reader').classList.add('hidden'); $('text').classList.add('hidden'); $('player').classList.add('hidden');
   $('home').classList.remove('hidden'); $('libBtn').classList.add('hidden');
-  setStatus('');
+  setStatus(''); showDl(null);
   const books = ((await db.all()) || []).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   $('libTitle').classList.toggle('hidden', !books.length);
   const lib = $('lib'); lib.innerHTML = '';
   books.forEach(b => {
     const pct = b.total ? Math.round((b.idx || 0) / b.total * 100) : 0;
     const el = document.createElement('div'); el.className = 'book';
-    el.innerHTML = `<div class="info"><div class="t"></div><div class="p">${pct}% ouvido</div><div class="bar"><i style="width:${pct}%"></i></div></div><button class="del" aria-label="Remover">×</button>`;
+    el.innerHTML = `<div class="info"><div class="t"></div><div class="p">${pct}% do livro</div><div class="bar"><i style="width:${pct}%"></i></div></div><button class="del" aria-label="Remover">×</button>`;
     el.querySelector('.t').textContent = b.title;
     el.onclick = () => openBook(b);
     el.querySelector('.del').onclick = async ev => {
       ev.stopPropagation();
       if (el.dataset.confirm){ await db.del(b.id); showLibrary(); }
-      else { el.dataset.confirm = 1; el.querySelector('.del').textContent = 'Remover?'; el.querySelector('.del').style.fontSize = '13px'; }
+      else { el.dataset.confirm = 1; const d = el.querySelector('.del'); d.textContent = 'Remover?'; d.style.fontSize = '13px'; }
     };
     lib.appendChild(el);
   });
 }
 
 function openBook(b){
-  book = b; chunks = split(b.text);
-  idx = Math.min(b.idx || 0, Math.max(chunks.length - 1, 0));
-  clearCache(); gen++;
-  render();
-  $('home').classList.add('hidden'); $('reader').classList.remove('hidden');
-  $('player').classList.remove('hidden'); $('libBtn').classList.remove('hidden');
+  book = b;
+  $('home').classList.add('hidden'); $('reader').classList.remove('hidden'); $('text').classList.remove('hidden');
+  $('libBtn').classList.remove('hidden');
   $('mTitle').textContent = b.title;
   $('mSub').textContent = `${b.text.split(/\s+/).length.toLocaleString('pt-BR')} palavras · toque numa frase para ouvir dali`;
-  setStatus(idx > 0 ? 'Continuando de onde você parou.' : '');
-  mark(); updateMedia();
+  setStatus('');
   ls.set('lastBook', b.id);
-  getSession().catch(() => {});   // já começa a preparar a voz
+  if (view.content === 'sum' && view.engine === 'ai' && !(b.ai && b.ai[view.level]) && !ls.get('apiKey', '')) view.engine = 'auto';
+  syncSegs();
+  loadContent();
+  if (view.mode === 'listen') getSession().catch(() => {});
 }
 
 async function handle(file){
@@ -475,26 +645,44 @@ async function handle(file){
   try{
     const ext = file.name.split('.').pop().toLowerCase();
     const buf = await file.arrayBuffer();
-    let text = '', title = file.name.replace(/\.[^.]+$/, '');
+    let text = '', title = file.name.replace(/\.[^.]+$/, ''), sections = null;
     if (ext === 'pdf') text = await readPDF(buf);
-    else if (ext === 'epub'){ const r = await readEPUB(buf); text = r.text; if (r.title) title = r.title; }
+    else if (ext === 'epub'){
+      const r = await readEPUB(buf); sections = r.sections; if (r.title) title = r.title;
+      text = sections.map(s => (s.title ? s.title + '\n\n' : '') + s.text).join('\n\n');
+    }
     else if (ext === 'docx') text = (await mammoth.extractRawText({arrayBuffer: buf})).value;
     else text = new TextDecoder('utf-8').decode(buf);
-    if (!split(text).length){
+    if (!/[\p{L}]{3,}/u.test(text)){
       setStatus('Não encontrei texto nesse arquivo. Se for um PDF escaneado (foto das páginas), ele não tem texto para ler.');
       return;
     }
     const id = file.name + '_' + file.size;
     const old = await db.get(id);
-    const b = old || { id, title, text, idx: 0, added: Date.now() };
+    const b = old || { id, title, text, sections, idx: 0, pos: {}, added: Date.now() };
     b.updated = Date.now();
     await db.put(b);
+    view.content = 'full'; ls.set('view', view);
     openBook(b);
   }catch(err){
     console.error(err);
     setStatus('Não consegui abrir esse arquivo (' + err.message + ').');
   }
 }
+
+// ---------------- Configurações (chave da IA) ----------------
+function openSheet(){ $('keyInput').value = ls.get('apiKey', ''); $('sheet').classList.remove('hidden'); }
+function closeSheet(){ $('sheet').classList.add('hidden'); }
+$('setBtn').onclick = openSheet;
+$('keyClose').onclick = closeSheet;
+$('sheet').onclick = e => { if (e.target.id === 'sheet') closeSheet(); };
+$('keySave').onclick = () => {
+  const k = $('keyInput').value.trim();
+  if (k) ls.set('apiKey', k); else ls.del('apiKey');
+  closeSheet();
+  if (k && book && view.content === 'sum'){ view.engine = 'ai'; ls.set('view', view); syncSegs(); loadContent(); }
+};
+$('keyDel').onclick = () => { ls.del('apiKey'); $('keyInput').value = ''; closeSheet(); };
 
 // ---------------- Eventos ----------------
 const input = $('file');
@@ -506,17 +694,59 @@ $('prev').onclick = () => jump(idx - 1);
 $('next').onclick = () => jump(idx + 1);
 $('seek').onchange = e => jump(parseInt(e.target.value));
 $('seek').oninput = e => { idx = parseInt(e.target.value); mark(); };
-$('text').onclick = e => { const s = e.target.closest('.s'); if (s){ idx = +s.dataset.i; loadedIdx = -1; play(); save(); } };
-$('rate').onchange = () => { rate = parseFloat($('rate').value); ls.set('rate', rate); audio.defaultPlaybackRate = rate; audio.playbackRate = rate; mark(); };
+$('text').onclick = e => {
+  const s = e.target.closest('.s'); if (!s || view.mode !== 'listen') return;
+  idx = +s.dataset.i; loadedIdx = -1; play(); save();
+};
+$('rate').onchange = () => { rate = parseFloat($('rate').value); ls.set('rate', rate); audio.defaultPlaybackRate = rate; audio.playbackRate = rate; mark(); updateInfo(); };
 $('voice').onchange = () => {
   voiceId = $('voice').value; ls.set('voice', voiceId);
   gen++; clearCache(); session = null;
   if (playing) startCurrent(); else getSession().catch(() => {});
 };
+
+function bindSeg(id, key, after){
+  $(id).onclick = e => {
+    const b = e.target.closest('button'); if (!b || view[key] === b.dataset.v) return;
+    if (key === 'engine' && b.dataset.v === 'ai' && !ls.get('apiKey', '') && !(book && book.ai && book.ai[view.level])){ openSheet(); return; }
+    if (book && key !== 'mode') save(true);
+    view[key] = b.dataset.v; ls.set('view', view); syncSegs(); after && after();
+  };
+}
+bindSeg('segContent', 'content', loadContent);
+bindSeg('segLevel', 'level', loadContent);
+bindSeg('segEngine', 'engine', loadContent);
+bindSeg('segMode', 'mode', () => {
+  if (view.mode === 'read'){ if (playing) pause(); mark(true); }
+  else { getSession().catch(() => {}); mark(true); }
+  updateInfo();
+});
+
+$('fontUp').onclick = () => setFont(fs + 1);
+$('fontDown').onclick = () => setFont(fs - 1);
+function setFont(v){ fs = Math.max(14, Math.min(30, v)); ls.set('fs', fs); document.documentElement.style.setProperty('--fs', fs + 'px'); }
+
+// No modo Ler, a posição acompanha a rolagem da tela
+let scrollT;
+window.addEventListener('scroll', () => {
+  if (!book || view.mode !== 'read' || !chunks.length) return;
+  clearTimeout(scrollT);
+  scrollT = setTimeout(() => {
+    const spans = $('text').querySelectorAll('.s');
+    let lo = 0, hi = spans.length - 1, found = 0;
+    while (lo <= hi){                       // busca binária pela primeira frase visível
+      const mid = (lo + hi) >> 1;
+      if (spans[mid].getBoundingClientRect().bottom < 70){ lo = mid + 1; } else { found = mid; hi = mid - 1; }
+    }
+    idx = +spans[found].dataset.i; mark(); save();
+  }, 250);
+}, { passive: true });
+
 document.addEventListener('visibilitychange', () => { if (!document.hidden) mark(); else save(true); });
 window.addEventListener('pagehide', () => save(true));
 
 // ---------------- Início ----------------
+syncSegs();
 (async () => {
   const lastId = ls.get('lastBook', null);
   const last = lastId && await db.get(lastId);
