@@ -120,3 +120,45 @@ export function summarize(sections, ratio){
   });
   return out;
 }
+
+// ---------------- Conserto de texto vindo de PDF ----------------
+const LIG_MAP = { '\uFB00': 'ff', '\uFB01': 'fi', '\uFB02': 'fl', '\uFB03': 'ffi', '\uFB04': 'ffl', '\uFB05': 'st', '\uFB06': 'st' };
+// Símbolos que alguns PDFs usam no lugar das ligaduras (fi, fl...) por erro de codificação da fonte
+const ODD = '\\uE000-\\uF8FF\\uFB50-\\uFDFF\\uFE70-\\uFEFF\\uFFFD';
+const FI_HINT = /fi(c|m|n|l|z|s|x|e|g|o|r|t|a|d|q|u|v|b|p)/;
+const FL_HINT = /fl(or|u|ex|et|ag|an|au|ech|at|it)|conflit|reflex|reflet|influ|afli|aflu|infla/;
+
+export function fixLigatures(text){
+  text = text.replace(/[\uFB00-\uFB06]/g, c => LIG_MAP[c]);
+  const re = new RegExp(`(\\p{L}*)([${ODD}])(\\p{L}*)`, 'gu');
+  const found = new Map();
+  for (const m of text.matchAll(re)){
+    if (!m[1] && !m[3]) continue;
+    if (!found.has(m[2])) found.set(m[2], []);
+    found.get(m[2]).push([m[1].toLowerCase(), m[3].toLowerCase()]);
+  }
+  if (!found.size) return text;
+  const known = new Set((text.toLowerCase().match(/\p{L}{4,}/gu) || []));
+  for (const [ch, ws] of found){
+    let best = 'fi', bestSc = -1;
+    for (const cand of ['fi', 'fl', 'ff', 'ffi', 'ffl']){
+      let sc = cand === 'fi' ? ws.length * 0.5 : 0;
+      for (const [a, b] of ws){
+        const w = a + cand + b;
+        if (known.has(w)) sc += 2;
+        if (cand === 'fi' && FI_HINT.test(w)) sc += 1;
+        if (cand === 'fl' && FL_HINT.test(w)) sc += 1.5;
+      }
+      if (sc > bestSc){ bestSc = sc; best = cand; }
+    }
+    text = text.replace(new RegExp(`(?<=\\p{L}|^|\\s)${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\p{L})|(?<=\\p{L})${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gu'), best);
+  }
+  return text;
+}
+
+// Junta linhas que o PDF quebrou no meio da frase (cada linha virava um parágrafo)
+export function repairText(text){
+  return fixLigatures(text)
+    .replace(/(\p{L})-\n\s*\n?(\p{Ll})/gu, '$1$2')
+    .replace(/([^\n.!?:;"”»])\n\s*\n(?=[a-zà-ÿ0-9(,;])/g, '$1 ');
+}

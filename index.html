@@ -350,7 +350,7 @@
 </div>
 
 <script type="module">
-import { deriveSections, buildChunks, summarize, RATIOS, keywords } from './texto.js?v=3';
+import { deriveSections, buildChunks, summarize, RATIOS, keywords, repairText, fixLigatures } from './texto.js?v=4';
 
 const $ = id => document.getElementById(id);
 const AHEAD = 8;
@@ -542,7 +542,7 @@ async function readPDF(buf){
     let out = '', lastY = null;
     for (const it of tc.items){
       const y = it.transform ? it.transform[5] : null;
-      if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) out += '\n';
+      if (lastY !== null && y !== null && Math.abs(y - lastY) > 2){ if (!out.endsWith('\n')) out += '\n'; }
       else if (out && !out.endsWith(' ') && !it.str.startsWith(' ')) out += ' ';
       out += it.str; if (it.hasEOL) out += '\n';
       lastY = y;
@@ -587,8 +587,9 @@ async function readEPUB(buf){
 }
 
 function sectionsOf(b){
-  if (b.sections && b.sections.length) return b.sections;
-  return b._derived ||= deriveSections(b.text);
+  if (b._derived) return b._derived;
+  if (b.sections && b.sections.length) return b._derived = b.sections.map(s => ({ title: fixLigatures(s.title || ''), text: fixLigatures(s.text) }));
+  return b._derived = deriveSections(repairText(b.text));
 }
 
 // ---------------- Resumo com IA ----------------
@@ -666,6 +667,14 @@ async function loadContent(){
   if (token !== loadToken) return;
   chunks = buildChunks(secs || [], { showSynthetic: view.content === 'sum' });
   book.pos ||= { full: book.idx || 0 };
+  if (book.fmt !== 2){
+    // livro salvo antes do conserto de texto: os trechos mudaram, então converte a posição pela porcentagem
+    if (book.total && book.pos.full) book.pos.full = Math.round(book.pos.full / book.total * buildChunks(sectionsOf(book)).length);
+    for (const k of Object.keys(book.pos)) if (k !== 'full') delete book.pos[k];
+    book.fmt = 2;
+    if (view.content === 'full'){ book.idx = book.pos.full || 0; book.total = chunks.length; }
+    db.put(stripDerived(book));
+  }
   idx = Math.min(book.pos[posKey()] || 0, Math.max(chunks.length - 1, 0));
   render();
   if (!chunks.length) $('text').innerHTML = '<div class="empty">Não há texto suficiente para montar este resumo.</div>';
@@ -804,7 +813,7 @@ async function handle(file){
     }
     const id = file.name + '_' + file.size;
     const old = await db.get(id);
-    const b = old || { id, title, text, sections, idx: 0, pos: {}, added: Date.now() };
+    const b = old || { id, title, text, sections, idx: 0, pos: {}, fmt: 2, added: Date.now() };
     b.updated = Date.now();
     await db.put(b);
     view.content = 'full'; ls.set('view', view);
