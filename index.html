@@ -728,7 +728,7 @@ $('keySave').onclick = () => {
 $('keyDel').onclick = () => { ls.del('apiKey'); $('keyInput').value = ''; closeSheet(); };
 
 // ---------------- Chat sobre o livro ----------------
-const CTX_LIMIT = 450000;          // caracteres do livro enviados de uma vez (~120 mil tokens)
+const CTX_LIMIT = 300000;          // ~80 mil tokens: fica abaixo de 100 mil, onde o preço da API é 5x menor
 const SUGGESTIONS = ['Do que trata este livro?', 'Resuma o que eu li até agora', 'Quem são os personagens ou autores citados?', 'Quais são as ideias principais deste capítulo?'];
 let pendingChat = false, chatBusy = false, chatAbort = null;
 
