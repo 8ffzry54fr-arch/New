@@ -291,6 +291,7 @@
 <div id="player" class="hidden">
   <div class="pwrap">
     <div class="prog"><span id="pos">0%</span><input type="range" id="seek" min="0" max="0" value="0"><span id="left"></span></div>
+    <div id="buffer" style="text-align:center;font-size:11.5px;opacity:.7;margin-top:4px;min-height:14px"></div>
     <div class="ctrls">
       <button class="ic" id="prev" aria-label="Voltar"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12l8.5 6V6z"/></svg></button>
       <button class="ic" id="play" aria-label="Tocar"><svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M8 5v14l11-7z"/></svg></button>
@@ -353,12 +354,22 @@
 import { deriveSections, buildChunks, summarize, RATIOS, keywords, repairText, fixLigatures } from './texto.js?v=5';
 
 const $ = id => document.getElementById(id);
-const AHEAD = 8;
+const AHEAD = 45;              // ~20 min de áudio pronto à frente, para aguentar a tela bloqueada
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
 const PIPER = 'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize';
 const AI_MODEL = 'claude-haiku-5-5';
 const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=';
+// 1 segundo de silêncio em loop: mantém o áudio "vivo" enquanto o próximo trecho ainda está sendo gerado
+const HOLD = (() => {
+  const sr = 8000, n = sr, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+})();
+let holding = false;
 const LEVEL_NAME = { c: 'curto', m: 'médio', l: 'longo' };
 
 if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -459,6 +470,7 @@ async function pump(){
       const blob = await trimWav(await s.predict(chunks[next].t));
       if (g !== gen) break;
       cache.set(next, URL.createObjectURL(blob));
+      showBuffer();
       if (waiting && next === idx) startCurrent();
       else if (next === idx + 1) preloadNext();
     }
@@ -475,7 +487,7 @@ async function pump(){
 function prune(){
   for (const [i, url] of cache) if (i < idx - 1 || i > idx + AHEAD + 4){ URL.revokeObjectURL(url); cache.delete(i); }
 }
-function clearCache(){ for (const url of cache.values()) URL.revokeObjectURL(url); cache.clear(); loadedIdx = -1; preIdx = -1; }
+function clearCache(){ for (const url of cache.values()) URL.revokeObjectURL(url); cache.clear(); loadedIdx = -1; preIdx = -1; if (typeof showBuffer === "function") showBuffer(); }
 
 // Corta o silêncio do começo e do fim de cada trecho gerado, deixando só uma pausa curta e natural
 async function trimWav(blob){
@@ -503,7 +515,17 @@ async function trimWav(blob){
   }catch(e){ return blob; }
 }
 
+function showBuffer(){
+  let i = idx, chars = 0;
+  while (cache.has(i) && i < chunks.length){ chars += chunks[i].t.length; i++; }
+  const mins = Math.floor(chars / (14 * rate) / 60);
+  const all = i >= chunks.length;
+  $('buffer').textContent = !playing && !cache.size ? '' :
+    all ? '✓ Áudio pronto até o fim' : mins >= 1 ? `✓ ${mins} min de áudio prontos à frente` : 'Preparando o áudio…';
+}
+
 function preloadNext(){
+  if (document.hidden) return;          // com a tela bloqueada, usa um tocador só (o iPhone prefere assim)
   const n = idx + 1, url = cache.get(n);
   if (!url || preIdx === n) return;
   const sb = standby();
@@ -516,14 +538,19 @@ function preloadNext(){
 function startCurrent(){
   mark();
   const url = cache.get(idx);
-  if (!url){ waiting = true; setBusy(true); pump(); return; }
+  if (!url){
+    waiting = true; setBusy(true);
+    if (playing && !holding){ holding = true; audio.loop = true; audio.src = HOLD; audio.play().catch(() => {}); }
+    pump(); return;
+  }
   waiting = false; setBusy(false);
-  if (preIdx === idx){ const old = audio; audio = standby(); old.pause(); }
+  holding = false; audio.loop = false;
+  if (preIdx === idx && !document.hidden){ const old = audio; audio = standby(); old.pause(); }
   else { standby().pause(); audio.src = url; }
   preIdx = -1; loadedIdx = idx;
   audio.defaultPlaybackRate = rate; audio.playbackRate = rate;
   audio.play().catch(e => { console.warn(e); if (e.name === 'NotAllowedError'){ playing = false; setIcon(); setStatus('Toque em ▶ para continuar.'); } });
-  prune(); pump(); preloadNext();
+  prune(); pump(); preloadNext(); showBuffer();
 }
 function unlock(){
   if (unlocked) return;
@@ -540,6 +567,7 @@ function play(){
 }
 function pause(){
   playing = false; waiting = false; audio.pause(); setIcon(); setBusy(false); save(true);
+  if (holding){ holding = false; audio.loop = false; loadedIdx = -1; }
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
 }
 function jump(i){
@@ -549,7 +577,7 @@ function jump(i){
   save();
 }
 players.forEach(p => p.addEventListener('ended', e => {
-  if (e.target !== audio || !playing || audio.src === SILENT) return;
+  if (e.target !== audio || !playing || holding || audio.src === SILENT) return;
   if (idx + 1 >= chunks.length){ pause(); idx = 0; save(true); setStatus(view.content === 'full' ? 'Fim do livro 🎉' : 'Fim do resumo 🎉'); mark(); return; }
   idx++; save(); startCurrent();
 }));
