@@ -428,28 +428,78 @@ const cache = new Map();
 let gen = 0, pumping = false;
 
 // ---------------- Voz neural (Piper) ----------------
-let tts = null, session = null, sessionVoice = null, sessionPromise = null;
+// A voz é gerada num processo separado (tts-worker.js) para a tela não travar.
+// Se esse processo não funcionar no aparelho, o app volta ao modo antigo, gerando na própria página.
+let session = null, sessionVoice = null, sessionPromise = null, workerBroken = false, tts = null;
+const WASM_PATHS = () => ({ onnxWasm: ORT, piperData: PIPER + '.data', piperWasm: PIPER + '.wasm' });
+function dlStatus(first){ setStatus(first ? 'Baixando a voz (só na primeira vez, cerca de 60 MB)…' : 'Preparando a voz…'); }
+function dlProgress(loaded, total){ showDl(loaded / total); setStatus(`Baixando a voz: ${Math.round(loaded / total * 100)}% (só na primeira vez)`); }
+
+function workerSession(v){
+  return new Promise((resolve, reject) => {
+    let w;
+    try{ w = new Worker('./tts-worker.js?v=1', { type: 'module' }); }catch(e){ reject(e); return; }
+    let seq = 0, watchdog, ready = false;
+    const calls = new Map();
+    const fail = err => {
+      clearTimeout(watchdog);
+      try{ w.terminate(); }catch(e){}
+      for (const c of calls.values()) c.reject(err);
+      calls.clear();
+      if (ready) workerBroken = true;
+      reject(err);
+    };
+    const arm = () => { clearTimeout(watchdog); watchdog = setTimeout(() => fail(new Error('o processo de voz não respondeu')), 30000); };
+    w.onerror = ev => { if (ev.preventDefault) ev.preventDefault(); fail(new Error(ev.message || 'erro no processo de voz')); };
+    w.onmessage = ev => {
+      const m = ev.data, c = calls.get(m.id);
+      if (!c) return;
+      if (m.type === 'status'){ arm(); dlStatus(m.first); return; }
+      if (m.type === 'progress'){ arm(); dlProgress(m.loaded, m.total); return; }
+      calls.delete(m.id);
+      if (m.type === 'error') c.reject(new Error(m.message)); else c.resolve(m);
+    };
+    const call = (type, data) => new Promise((res, rej) => {
+      const id = ++seq; calls.set(id, { resolve: res, reject: rej });
+      w.postMessage(Object.assign({ id, type }, data));
+    });
+    arm();
+    call('init', { voiceId: v, wasmPaths: WASM_PATHS() }).then(() => {
+      clearTimeout(watchdog); ready = true;
+      resolve({
+        worker: true,
+        predict: text => call('predict', { text }).then(m => new Blob([m.buf], { type: 'audio/wav' })),
+        close: () => { try{ w.terminate(); }catch(e){} for (const c of calls.values()) c.reject(new Error('voz trocada')); calls.clear(); }
+      });
+    }, fail);
+  });
+}
+
+async function mainSession(v){
+  tts ||= await import('piper-tts');
+  let stored = [];
+  try{ stored = await tts.stored(); }catch(e){}
+  dlStatus(!stored.includes(v));
+  const ts = await tts.TtsSession.create({
+    voiceId: v, wasmPaths: WASM_PATHS(),
+    progress: p => { if (p.url !== tts.INFERENCE_PROGRESS_URL && p.total) dlProgress(p.loaded, p.total); }
+  });
+  return { worker: false, predict: async text => trimWav(await ts.predict(text)), close(){} };
+}
+
 async function getSession(){
   if (session && sessionVoice === voiceId) return session;
   if (sessionPromise && sessionVoice === voiceId) return sessionPromise;
   sessionVoice = voiceId;
   sessionPromise = (async () => {
-    tts ||= await import('piper-tts');
-    let stored = [];
-    try{ stored = await tts.stored(); }catch(e){}
-    const first = !stored.includes(voiceId);
-    setStatus(first ? 'Baixando a voz (só na primeira vez, cerca de 60 MB)…' : 'Preparando a voz…');
-    const s = await tts.TtsSession.create({
-      voiceId,
-      wasmPaths: { onnxWasm: ORT, piperData: PIPER + '.data', piperWasm: PIPER + '.wasm' },
-      progress: p => {
-        if (p.url === tts.INFERENCE_PROGRESS_URL || !p.total) return;
-        showDl(p.loaded / p.total);
-        setStatus(`Baixando a voz: ${Math.round(p.loaded / p.total * 100)}% (só na primeira vez)`);
-      }
-    });
+    let s = null;
+    if (!workerBroken && 'Worker' in window){
+      try{ s = await workerSession(voiceId); }
+      catch(e){ console.warn('Processo de voz separado falhou; usando o modo normal.', e); workerBroken = true; }
+    }
+    if (!s) s = await mainSession(voiceId);
     showDl(null);
-    if (sessionVoice !== voiceId) return getSession();
+    if (sessionVoice !== voiceId){ s.close(); return getSession(); }
     session = s; setStatus('');
     return s;
   })();
@@ -461,13 +511,14 @@ async function pump(){
   if (pumping) return;
   pumping = true;
   const g = gen;
+  let retry = false;
   try{
     const s = await getSession();
     while (playing && g === gen){
       let next = -1;
       for (let i = idx; i < Math.min(chunks.length, idx + AHEAD); i++) if (!cache.has(i)){ next = i; break; }
       if (next < 0) break;
-      const blob = await trimWav(await s.predict(chunks[next].t));
+      const blob = await s.predict(chunks[next].t);
       if (g !== gen) break;
       cache.set(next, URL.createObjectURL(blob));
       showBuffer();
@@ -476,12 +527,19 @@ async function pump(){
     }
   }catch(e){
     console.error(e);
+    if (g !== gen){ /* voz trocada no meio: o finally recomeça */ }
+    else if (session && session.worker && workerBroken){
+      // o processo separado caiu no meio: segue no modo normal sem parar a leitura
+      session.close(); session = null; sessionVoice = null; sessionPromise = null;
+      retry = true;
+    } else {
     pause();
     setStatus('Não consegui gerar a voz (' + (e.message || e) + '). Verifique a internet na primeira vez e tente de novo.');
     showDl(null);
+    }
   }finally{
     pumping = false;
-    if (playing && g !== gen) pump();
+    if (playing && (retry || g !== gen)) pump();
   }
 }
 function prune(){
@@ -1067,7 +1125,8 @@ $('text').onclick = e => {
 $('rate').onchange = () => { rate = parseFloat($('rate').value); ls.set('rate', rate); players.forEach(p => { p.defaultPlaybackRate = rate; p.playbackRate = rate; }); mark(); updateInfo(); };
 $('voice').onchange = () => {
   voiceId = $('voice').value; ls.set('voice', voiceId);
-  gen++; clearCache(); session = null;
+  if (session) session.close();
+  gen++; clearCache(); session = null; sessionPromise = null;
   if (playing) startCurrent(); else getSession().catch(() => {});
 };
 
