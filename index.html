@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Leitor em Voz Alta</title>
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-180.png">
+<title>Leia &amp; Ouça</title>
+<link rel="manifest" href="manifest.json?v=2">
+<link rel="apple-touch-icon" href="icon-180.png?v=2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Leitor">
+<meta name="apple-mobile-web-app-title" content="Leia &amp; Ouça">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f6f1e7">
 <link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -139,7 +139,7 @@
 </head>
 <body>
 <header>
-  <h1>Leitor em Voz Alta</h1>
+  <h1>Leia &amp; Ouça</h1>
   <button class="btn hidden" id="libBtn">Biblioteca</button>
   <button class="iconbtn" id="setBtn" aria-label="Configurações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </header>
@@ -415,8 +415,8 @@ function updateMedia(){
   if (!('mediaSession' in navigator) || !book) return;
   const ms = navigator.mediaSession;
   try{
-    ms.metadata = new MediaMetadata({ title: book.title + (view.content === 'sum' ? ' (resumo)' : ''), artist: 'Leitor em Voz Alta',
-      artwork: [{src: 'icon-512.png', sizes: '512x512', type: 'image/png'}] });
+    ms.metadata = new MediaMetadata({ title: book.title + (view.content === 'sum' ? ' (resumo)' : ''), artist: 'Leia & Ouça',
+      artwork: [{src: 'icon-512.png?v=2', sizes: '512x512', type: 'image/png'}] });
   }catch(e){}
   ms.playbackState = playing ? 'playing' : 'paused';
 }
