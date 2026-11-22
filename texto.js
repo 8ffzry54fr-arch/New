@@ -39,13 +39,13 @@ export function deriveSections(text){
 // Trechos curtos (o que a voz lê de cada vez)
 export function buildChunks(secs, { showSynthetic = false } = {}){
   const out = []; let p = 0;
-  secs.forEach(s => {
-    if (s.title && secs.length > 1 && (!s.synthetic || showSynthetic)) out.push({ t: s.title, p: p++, h: true });
+  secs.forEach((s, si) => {
+    if (s.title && secs.length > 1 && (!s.synthetic || showSynthetic)) out.push({ t: s.title, p: p++, h: true, s: si });
     const paras = s.text.split(/\n\s*\n|\n(?=[A-ZÀ-Ú“"—–-])/).map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
     paras.forEach(para => {
       const sents = para.match(/[^.!?…]+(?:[.!?…]+["”»')\]]*|$)\s*/g) || [para];
       let buf = '';
-      const push = () => { if (buf.trim()) out.push({ t: buf.trim(), p }); buf = ''; };
+      const push = () => { if (buf.trim()) out.push({ t: buf.trim(), p, s: si }); buf = ''; };
       for (const s of sents){
         if ((buf + s).length > CHUNK && buf) push();
         if (s.length > CHUNK * 1.4){
@@ -72,6 +72,8 @@ const words = s => (s.toLowerCase().match(/\p{L}{3,}/gu) || []).filter(w => !STO
 const sentencesOf = text => text.split(/\n\s*\n/).flatMap(par =>
   (par.replace(/\s+/g, ' ').match(/[^.!?…]+(?:[.!?…]+["”»')\]]*|$)\s*/g) || [])
     .map(s => s.trim()).filter(s => s.split(' ').length >= 5));
+
+export const keywords = s => [...new Set(words(s))];
 
 export const RATIOS = { c: 0.04, m: 0.08, l: 0.15 };
 

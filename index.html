@@ -109,6 +109,31 @@
   #sheet input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:15px Inter,sans-serif;
     background:var(--bg);color:var(--ink);margin-bottom:12px}
   #sheet .acts{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+  #chatBtn{position:fixed;right:16px;bottom:calc(200px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;
+    background:var(--accent);color:#fff;border:none;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:5}
+  #chatBtn.low{bottom:calc(24px + env(safe-area-inset-bottom))}
+  #chatBtn svg{width:26px;height:26px}
+  #chat{position:fixed;inset:0;background:var(--bg);z-index:9;display:flex;flex-direction:column}
+  #chat .top{display:flex;align-items:center;gap:10px;padding:calc(14px + env(safe-area-inset-top)) 16px 10px;border-bottom:1px solid var(--line);background:var(--paper)}
+  #chat .top .tt{flex:1;min-width:0}
+  #chat .top .tt b{display:block;font-family:Literata,serif;font-size:17px}
+  #chat .top .tt span{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch}
+  .msg{max-width:86%;padding:10px 14px;border-radius:18px;font-size:16px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+  .msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:6px}
+  .msg.ai{align-self:flex-start;background:var(--paper);border:1px solid var(--line);border-bottom-left-radius:6px;font-family:Literata,serif}
+  .msg.ai.err{color:#b3261e;font-family:Inter,sans-serif;font-size:14px}
+  .msg.ai.typing::after{content:"▍";animation:blink 1s steps(2) infinite;color:var(--accent)}
+  @keyframes blink{50%{opacity:0}}
+  #chatEmpty{color:var(--muted);font-size:14px;line-height:1.5;text-align:center;margin:auto 6px}
+  #chatEmpty .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}
+  .chip{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 12px;font:14px Inter,sans-serif;cursor:pointer}
+  #chat form{display:flex;gap:8px;align-items:flex-end;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--paper)}
+  #chat textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:20px;padding:10px 14px;font:16px Inter,sans-serif;
+    background:var(--bg);color:var(--ink);max-height:120px;line-height:1.35}
+  #sendBtn{width:42px;height:42px;border-radius:50%;border:none;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
+  #sendBtn:disabled{opacity:.4}
+  #sendBtn svg{width:20px;height:20px}
   .hidden{display:none!important}
 </style>
 </head>
@@ -192,11 +217,26 @@
   </div>
 </div>
 
+<button id="chatBtn" class="hidden" aria-label="Perguntar sobre o livro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/><path d="M8.5 10.5h7M8.5 13.5h4.5"/></svg></button>
+
+<div id="chat" class="hidden">
+  <div class="top">
+    <div class="tt"><b>Pergunte sobre o livro</b><span id="chatBook"></span></div>
+    <button class="btn" id="chatClear">Limpar</button>
+    <button class="btn" id="chatClose">Fechar</button>
+  </div>
+  <div id="msgs"></div>
+  <form id="chatForm">
+    <textarea id="chatInput" rows="1" placeholder="Escreva sua pergunta…"></textarea>
+    <button id="sendBtn" type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg></button>
+  </form>
+</div>
+
 <div id="sheet" class="hidden">
   <div class="card">
-    <h3>Resumo com IA (Claude)</h3>
-    <p>O resumo automático é grátis e feito no próprio celular. O resumo com IA fica mais bem escrito, mas precisa de uma chave da API da Anthropic (console.anthropic.com), que é paga por uso.</p>
-    <p><b>Atenção:</b> ao usar o resumo com IA, o texto do livro é enviado à Anthropic para ser resumido. A chave fica salva só neste aparelho.</p>
+    <h3>IA (Claude): resumo e chat</h3>
+    <p>O resumo automático é grátis e feito no próprio celular. O resumo com IA fica mais bem escrito e o chat responde perguntas sobre o livro, mas precisa de uma chave da API da Anthropic (console.anthropic.com), que é paga por uso.</p>
+    <p><b>Atenção:</b> ao usar o resumo com IA ou o chat, o texto do livro é enviado à Anthropic para ser resumido. A chave fica salva só neste aparelho.</p>
     <input id="keyInput" type="password" placeholder="Cole aqui sua chave (sk-ant-...)" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div class="acts">
       <button class="btn" id="keyDel">Remover chave</button>
@@ -207,7 +247,7 @@
 </div>
 
 <script type="module">
-import { deriveSections, buildChunks, summarize, RATIOS } from './texto.js?v=2';
+import { deriveSections, buildChunks, summarize, RATIOS, keywords } from './texto.js?v=3';
 
 const $ = id => document.getElementById(id);
 const AHEAD = 8;
@@ -585,7 +625,7 @@ function save(now){
   const f = () => {
     book.pos ||= {};
     book.pos[posKey()] = idx;
-    if (view.content === 'full'){ book.idx = idx; book.total = chunks.length; }
+    if (view.content === 'full'){ book.idx = idx; book.total = chunks.length; if (chunks[idx]) book.sec = chunks[idx].s || 0; }
     book.updated = Date.now(); ls.set('lastBook', book.id); db.put(stripDerived(book));
   };
   now ? f() : (saveT = setTimeout(f, 800));
@@ -598,6 +638,8 @@ function syncSegs(){
   const reading = view.mode === 'read';
   $('player').classList.toggle('hidden', reading || !book);
   $('main').classList.toggle('reading', reading);
+  $('chatBtn').classList.toggle('hidden', !book);
+  $('chatBtn').classList.toggle('low', reading);
 }
 
 async function showLibrary(){
@@ -605,7 +647,7 @@ async function showLibrary(){
   if (playing) pause();
   book = null; chunks = []; clearCache();
   $('reader').classList.add('hidden'); $('text').classList.add('hidden'); $('player').classList.add('hidden');
-  $('home').classList.remove('hidden'); $('libBtn').classList.add('hidden');
+  $('home').classList.remove('hidden'); $('libBtn').classList.add('hidden'); $('chatBtn').classList.add('hidden');
   setStatus(''); showDl(null);
   const books = ((await db.all()) || []).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   $('libTitle').classList.toggle('hidden', !books.length);
@@ -680,9 +722,151 @@ $('keySave').onclick = () => {
   const k = $('keyInput').value.trim();
   if (k) ls.set('apiKey', k); else ls.del('apiKey');
   closeSheet();
+  if (k && pendingChat){ pendingChat = false; openChat(); return; }
   if (k && book && view.content === 'sum'){ view.engine = 'ai'; ls.set('view', view); syncSegs(); loadContent(); }
 };
 $('keyDel').onclick = () => { ls.del('apiKey'); $('keyInput').value = ''; closeSheet(); };
+
+// ---------------- Chat sobre o livro ----------------
+const CTX_LIMIT = 450000;          // caracteres do livro enviados de uma vez (~120 mil tokens)
+const SUGGESTIONS = ['Do que trata este livro?', 'Resuma o que eu li até agora', 'Quem são os personagens ou autores citados?', 'Quais são as ideias principais deste capítulo?'];
+let pendingChat = false, chatBusy = false, chatAbort = null;
+
+function bookContext(question){
+  const secs = sectionsOf(book);
+  const label = (s, i) => s.title || `Parte ${i + 1}`;
+  const full = secs.map((s, i) => `### ${label(s, i)}\n${s.text}`).join('\n\n');
+  if (full.length <= CTX_LIMIT) return { text: full, partial: false };
+  // Livro grande demais: manda o capítulo atual e os mais ligados à pergunta
+  const cur = Math.min(book.sec || 0, secs.length - 1);
+  const qw = keywords(question + ' ' + (book.chat || []).slice(-2).map(m => m.content).join(' '));
+  const scored = secs.map((s, i) => {
+    const kw = new Set(keywords(s.text.slice(0, 60000)));
+    let sc = 0; for (const w of qw) if (kw.has(w)) sc++;
+    if (i === cur) sc += 1000;
+    if (Math.abs(i - cur) === 1) sc += 2;
+    return { i, sc };
+  }).sort((a, b) => b.sc - a.sc);
+  const pick = new Set(); let size = 0;
+  for (const { i } of scored){
+    const len = secs[i].text.length + 50;
+    if (size + len > CTX_LIMIT) continue;
+    pick.add(i); size += len;
+  }
+  const text = [...pick].sort((a, b) => a - b).map(i => `### ${label(secs[i], i)}\n${secs[i].text}`).join('\n\n');
+  return { text, partial: true };
+}
+
+function where(){
+  const secs = sectionsOf(book);
+  const s = secs[Math.min(book.sec || 0, secs.length - 1)];
+  const pct = book.total ? Math.round((book.idx || 0) / book.total * 100) : 0;
+  return `O leitor está em ${pct}% do livro${s && s.title ? `, na parte "${s.title}"` : ''}.`;
+}
+
+function openChat(){
+  if (!book) return;
+  if (!ls.get('apiKey', '')){ pendingChat = true; openSheet(); return; }
+  $('chatBook').textContent = book.title;
+  $('chat').classList.remove('hidden');
+  renderChat();
+  setTimeout(() => $('chatInput').focus(), 100);
+}
+function closeChat(){ if (chatAbort) chatAbort.abort(); $('chat').classList.add('hidden'); }
+
+const tidy = t => t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/^\s*[-*]\s+/gm, '• ');
+function addBubble(role, text, cls){
+  const el = document.createElement('div');
+  el.className = 'msg ' + (role === 'user' ? 'user' : 'ai') + (cls ? ' ' + cls : '');
+  el.textContent = role === 'user' ? text : tidy(text);
+  $('msgs').appendChild(el);
+  $('msgs').scrollTop = $('msgs').scrollHeight;
+  return el;
+}
+function renderChat(){
+  const box = $('msgs'); box.innerHTML = '';
+  const hist = book.chat || [];
+  if (!hist.length){
+    box.innerHTML = '<div id="chatEmpty">Pergunte qualquer coisa sobre este livro: um resumo do que você já leu, quem é um personagem, o que o autor quis dizer…<div class="chips"></div></div>';
+    const chips = box.querySelector('.chips');
+    SUGGESTIONS.forEach(q => { const b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = q; b.onclick = () => ask(q); chips.appendChild(b); });
+    return;
+  }
+  hist.forEach(m => addBubble(m.role, m.content));
+}
+
+async function ask(q){
+  q = q.trim(); if (!q || chatBusy || !book) return;
+  const key = ls.get('apiKey', '');
+  if (!key){ pendingChat = true; openSheet(); return; }
+  book.chat ||= [];
+  if (!book.chat.length) $('msgs').innerHTML = '';
+  book.chat.push({ role: 'user', content: q });
+  addBubble('user', q);
+  $('chatInput').value = ''; autoGrow();
+  chatBusy = true; $('sendBtn').disabled = true;
+  const el = addBubble('assistant', '', 'typing');
+  let ans = '';
+  try{
+    const ctx = bookContext(q);
+    const system = [
+      { type: 'text', text: `Texto do livro "${book.title}"${ctx.partial ? ' (trechos selecionados, o livro é longo demais para caber inteiro)' : ''}:\n\n<livro>\n${ctx.text}\n</livro>`,
+        cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: `Você conversa com um leitor sobre o livro acima, num app de leitura no celular. ${where()}\n` +
+        `Responda em português do Brasil, em tom de conversa, com base no texto do livro. Seja direto: em geral até 150 palavras, a não ser que o leitor peça mais detalhes. ` +
+        `Quando citar algo do livro, diga em que parte está. Se a resposta não estiver no texto, diga isso com clareza e só então use conhecimento geral, avisando. ` +
+        `Se o leitor pedir um resumo do que leu até agora, não revele o que vem depois do ponto em que ele está. Não use markdown, títulos nem negrito.` }
+    ];
+    const messages = book.chat.slice(-20).map(m => ({ role: m.role, content: m.content }));
+    chatAbort = new AbortController();
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', signal: chatAbort.signal,
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, stream: true, system, messages })
+    });
+    if (!r.ok){
+      const e = await r.json().catch(() => ({}));
+      throw new Error((e.error && e.error.message) || ('erro ' + r.status));
+    }
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+    for (;;){
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0){
+        const ev = buf.slice(0, i); buf = buf.slice(i + 2);
+        const line = ev.split('\n').find(l => l.startsWith('data:'));
+        if (!line) continue;
+        let d; try{ d = JSON.parse(line.slice(5)); }catch(e){ continue; }
+        if (d.type === 'content_block_delta' && d.delta && d.delta.type === 'text_delta'){
+          ans += d.delta.text; el.textContent = tidy(ans);
+          const m = $('msgs'); if (m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight;
+        } else if (d.type === 'error') throw new Error((d.error && d.error.message) || 'erro da IA');
+      }
+    }
+    el.classList.remove('typing');
+    if (!ans.trim()) throw new Error('resposta vazia');
+    book.chat.push({ role: 'assistant', content: ans.trim() });
+    db.put(stripDerived(book));
+  }catch(e){
+    console.error(e);
+    el.classList.remove('typing');
+    book.chat.pop();                                   // tira a pergunta sem resposta do histórico
+    if (e.name === 'AbortError'){ el.remove(); }
+    else { el.classList.add('err'); el.textContent = 'Não consegui responder (' + e.message + '). Verifique a internet e a chave nas configurações.'; }
+  }finally{
+    chatBusy = false; chatAbort = null; $('sendBtn').disabled = false;
+  }
+}
+function autoGrow(){ const t = $('chatInput'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 120) + 'px'; }
+
+$('chatBtn').onclick = openChat;
+$('chatClose').onclick = closeChat;
+$('chatClear').onclick = () => { if (chatBusy) return; book.chat = []; db.put(stripDerived(book)); renderChat(); };
+$('chatForm').onsubmit = e => { e.preventDefault(); ask($('chatInput').value); };
+$('chatInput').addEventListener('input', autoGrow);
+$('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)){ e.preventDefault(); ask($('chatInput').value); } });
 
 // ---------------- Eventos ----------------
 const input = $('file');
