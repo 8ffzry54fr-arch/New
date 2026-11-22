@@ -350,7 +350,7 @@
 </div>
 
 <script type="module">
-import { deriveSections, buildChunks, summarize, RATIOS, keywords, repairText, fixLigatures } from './texto.js?v=4';
+import { deriveSections, buildChunks, summarize, RATIOS, keywords, repairText, fixLigatures } from './texto.js?v=5';
 
 const $ = id => document.getElementById(id);
 const AHEAD = 8;
@@ -406,8 +406,12 @@ document.documentElement.style.setProperty('--fs', fs + 'px');
 
 const posKey = () => view.content === 'full' ? 'full' : `sum-${view.engine}-${view.level}`;
 
-const audio = new Audio();
-audio.preload = 'auto';
+// Dois tocadores: enquanto um fala, o outro já deixa o próximo trecho carregado (menos pausa entre trechos)
+const players = [new Audio(), new Audio()];
+players.forEach(p => { p.preload = 'auto'; });
+let audio = players[0];
+let preIdx = -1;
+const standby = () => (audio === players[0] ? players[1] : players[0]);
 let loadedIdx = -1, waiting = false, unlocked = false;
 const cache = new Map();
 let gen = 0, pumping = false;
@@ -452,10 +456,11 @@ async function pump(){
       let next = -1;
       for (let i = idx; i < Math.min(chunks.length, idx + AHEAD); i++) if (!cache.has(i)){ next = i; break; }
       if (next < 0) break;
-      const blob = await s.predict(chunks[next].t);
+      const blob = await trimWav(await s.predict(chunks[next].t));
       if (g !== gen) break;
       cache.set(next, URL.createObjectURL(blob));
       if (waiting && next === idx) startCurrent();
+      else if (next === idx + 1) preloadNext();
     }
   }catch(e){
     console.error(e);
@@ -470,7 +475,42 @@ async function pump(){
 function prune(){
   for (const [i, url] of cache) if (i < idx - 1 || i > idx + AHEAD + 4){ URL.revokeObjectURL(url); cache.delete(i); }
 }
-function clearCache(){ for (const url of cache.values()) URL.revokeObjectURL(url); cache.clear(); loadedIdx = -1; }
+function clearCache(){ for (const url of cache.values()) URL.revokeObjectURL(url); cache.clear(); loadedIdx = -1; preIdx = -1; }
+
+// Corta o silêncio do começo e do fim de cada trecho gerado, deixando só uma pausa curta e natural
+async function trimWav(blob){
+  try{
+    const buf = await blob.arrayBuffer();
+    const v = new DataView(buf);
+    if (v.getUint32(0, true) !== 1179011410 || v.getUint16(34, true) !== 16) return blob;
+    const sr = v.getUint32(24, true);
+    const n = (buf.byteLength - 44) >> 1;
+    const pcm = new Int16Array(buf, 44, n);
+    const th = 350;
+    let a = 0; while (a < n && Math.abs(pcm[a]) < th) a++;
+    let b = n - 1; while (b > a && Math.abs(pcm[b]) < th) b--;
+    a = Math.max(0, a - Math.round(sr * 0.02));
+    b = Math.min(n - 1, b + Math.round(sr * 0.16));
+    if (b - a < sr * 0.15) return blob;
+    const len = b - a + 1;
+    const out = new ArrayBuffer(44 + len * 2);
+    new Uint8Array(out, 0, 44).set(new Uint8Array(buf, 0, 44));
+    const ov = new DataView(out);
+    ov.setUint32(4, out.byteLength - 8, true);
+    ov.setUint32(40, len * 2, true);
+    new Int16Array(out, 44, len).set(pcm.subarray(a, b + 1));
+    return new Blob([out], { type: 'audio/wav' });
+  }catch(e){ return blob; }
+}
+
+function preloadNext(){
+  const n = idx + 1, url = cache.get(n);
+  if (!url || preIdx === n) return;
+  const sb = standby();
+  sb.src = url; sb.defaultPlaybackRate = rate; sb.playbackRate = rate;
+  try{ sb.load(); }catch(e){}
+  preIdx = n;
+}
 
 // ---------------- Reprodução ----------------
 function startCurrent(){
@@ -478,15 +518,17 @@ function startCurrent(){
   const url = cache.get(idx);
   if (!url){ waiting = true; setBusy(true); pump(); return; }
   waiting = false; setBusy(false);
-  audio.src = url; loadedIdx = idx;
+  if (preIdx === idx){ const old = audio; audio = standby(); old.pause(); }
+  else { standby().pause(); audio.src = url; }
+  preIdx = -1; loadedIdx = idx;
   audio.defaultPlaybackRate = rate; audio.playbackRate = rate;
   audio.play().catch(e => { console.warn(e); if (e.name === 'NotAllowedError'){ playing = false; setIcon(); setStatus('Toque em ▶ para continuar.'); } });
-  prune(); pump();
+  prune(); pump(); preloadNext();
 }
 function unlock(){
   if (unlocked) return;
   unlocked = true;
-  try{ audio.src = SILENT; audio.play().catch(() => {}); }catch(e){}
+  players.forEach(p => { try{ p.src = SILENT; p.play().catch(() => {}); }catch(e){} });
 }
 function play(){
   if (!chunks.length) return;
@@ -506,11 +548,11 @@ function jump(i){
   if (playing) startCurrent(); else { audio.pause(); mark(); }
   save();
 }
-audio.addEventListener('ended', () => {
-  if (!playing || audio.src === SILENT) return;
+players.forEach(p => p.addEventListener('ended', e => {
+  if (e.target !== audio || !playing || audio.src === SILENT) return;
   if (idx + 1 >= chunks.length){ pause(); idx = 0; save(true); setStatus(view.content === 'full' ? 'Fim do livro 🎉' : 'Fim do resumo 🎉'); mark(); return; }
   idx++; save(); startCurrent();
-});
+}));
 function setIcon(){ $('playIcon').innerHTML = playing ? PAUSE : PLAY; }
 function setBusy(b){ $('play').classList.toggle('busy', b && playing); }
 
@@ -667,11 +709,11 @@ async function loadContent(){
   if (token !== loadToken) return;
   chunks = buildChunks(secs || [], { showSynthetic: view.content === 'sum' });
   book.pos ||= { full: book.idx || 0 };
-  if (book.fmt !== 2){
+  if (book.fmt !== 3){
     // livro salvo antes do conserto de texto: os trechos mudaram, então converte a posição pela porcentagem
     if (book.total && book.pos.full) book.pos.full = Math.round(book.pos.full / book.total * buildChunks(sectionsOf(book)).length);
     for (const k of Object.keys(book.pos)) if (k !== 'full') delete book.pos[k];
-    book.fmt = 2;
+    book.fmt = 3;
     if (view.content === 'full'){ book.idx = book.pos.full || 0; book.total = chunks.length; }
     db.put(stripDerived(book));
   }
@@ -813,7 +855,7 @@ async function handle(file){
     }
     const id = file.name + '_' + file.size;
     const old = await db.get(id);
-    const b = old || { id, title, text, sections, idx: 0, pos: {}, fmt: 2, added: Date.now() };
+    const b = old || { id, title, text, sections, idx: 0, pos: {}, fmt: 3, added: Date.now() };
     b.updated = Date.now();
     await db.put(b);
     view.content = 'full'; ls.set('view', view);
@@ -994,7 +1036,7 @@ $('text').onclick = e => {
   const s = e.target.closest('.s'); if (!s || view.mode !== 'listen') return;
   idx = +s.dataset.i; loadedIdx = -1; play(); save();
 };
-$('rate').onchange = () => { rate = parseFloat($('rate').value); ls.set('rate', rate); audio.defaultPlaybackRate = rate; audio.playbackRate = rate; mark(); updateInfo(); };
+$('rate').onchange = () => { rate = parseFloat($('rate').value); ls.set('rate', rate); players.forEach(p => { p.defaultPlaybackRate = rate; p.playbackRate = rate; }); mark(); updateInfo(); };
 $('voice').onchange = () => {
   voiceId = $('voice').value; ls.set('voice', voiceId);
   gen++; clearCache(); session = null;

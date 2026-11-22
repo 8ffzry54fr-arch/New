@@ -1,7 +1,7 @@
 // Divisão em capítulos, trechos para leitura e resumo automático (sem internet).
 
 const HEAD = /^(cap[íi]tulo|chapter|parte|livro|pr[óo]logo|ep[íi]logo|introdu[çc][ãa]o|conclus[ãa]o|pref[áa]cio|apresenta[çc][ãa]o|pref[áa]cio|posf[áa]cio)\b[^.!?]{0,70}$/i;
-const CHUNK = 320;
+const CHUNK = 420;
 
 // Capítulos a partir do texto puro (PDF, Word, txt)
 export function deriveSections(text){
@@ -124,13 +124,14 @@ export function summarize(sections, ratio){
 // ---------------- Conserto de texto vindo de PDF ----------------
 const LIG_MAP = { '\uFB00': 'ff', '\uFB01': 'fi', '\uFB02': 'fl', '\uFB03': 'ffi', '\uFB04': 'ffl', '\uFB05': 'st', '\uFB06': 'st' };
 // Símbolos que alguns PDFs usam no lugar das ligaduras (fi, fl...) por erro de codificação da fonte
-const ODD = '\\uE000-\\uF8FF\\uFB50-\\uFDFF\\uFE70-\\uFEFF\\uFFFD';
+// árabe, hebraico, área de uso privado e o caractere de substituição, com eventuais acentos soltos colados
+const ODD_RE = '[\\p{Script=Arabic}\\p{Script=Hebrew}\\p{Script=Syriac}\\p{Co}\\uFFFD\\u0000-\\u0008]\\p{M}*';
 const FI_HINT = /fi(c|m|n|l|z|s|x|e|g|o|r|t|a|d|q|u|v|b|p)/;
 const FL_HINT = /fl(or|u|ex|et|ag|an|au|ech|at|it)|conflit|reflex|reflet|influ|afli|aflu|infla/;
 
 export function fixLigatures(text){
   text = text.replace(/[\uFB00-\uFB06]/g, c => LIG_MAP[c]);
-  const re = new RegExp(`(\\p{L}*)([${ODD}])(\\p{L}*)`, 'gu');
+  const re = new RegExp(`(\\p{Script=Latin}*)(${ODD_RE})(\\p{Script=Latin}*)`, 'gu');
   const found = new Map();
   for (const m of text.matchAll(re)){
     if (!m[1] && !m[3]) continue;
@@ -151,7 +152,8 @@ export function fixLigatures(text){
       }
       if (sc > bestSc){ bestSc = sc; best = cand; }
     }
-    text = text.replace(new RegExp(`(?<=\\p{L}|^|\\s)${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\p{L})|(?<=\\p{L})${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gu'), best);
+    const esc = ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`${esc}(?=\\p{Script=Latin})|(?<=\\p{Script=Latin})${esc}`, 'gu'), best);
   }
   return text;
 }
