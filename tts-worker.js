@@ -17,7 +17,10 @@ async function loadLib(){
   let src = await r.text();
   src = src
     .replace(/(["'])\.\/([\w.-]+\.js)\1/g, (m, q, f) => q + LIB + f + q)
-    .replace(/(["'])onnxruntime-web\/wasm\1/g, (m, q) => q + ORT_MOD + q);
+    .replace(/(["'])onnxruntime-web\/wasm\1/g, (m, q) => q + ORT_MOD + q)
+    // menos memória: sem pré-reserva de memória do ONNX e com 1 thread (o iPhone fecha o app se passar do limite)
+    .replace('{ executionProviders: ["wasm"] }', '{ executionProviders: ["wasm"], enableCpuMemArena: false, enableMemPattern: false }')
+    .replace('ort.env.wasm.numThreads = navigator.hardwareConcurrency;', 'ort.env.wasm.numThreads = 1;');
   tts = await import(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
   return tts;
 }

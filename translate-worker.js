@@ -5,6 +5,7 @@ import { splitSentences } from './texto.js?v=6';
 
 const MODEL = 'OptimaMT/en-pt';
 env.allowLocalModels = false;
+if (env.backends && env.backends.onnx && env.backends.onnx.wasm) env.backends.onnx.wasm.numThreads = 1;
 
 let translator = null, loading = null;
 
@@ -14,7 +15,7 @@ function load(id){
   const files = new Map();
   loading = pipeline('translation', MODEL, {
     dtype: 'q8',
-    session_options: { extra: { session: { disable_quant_qdq: '1' } } },
+    session_options: { enableCpuMemArena: false, enableMemPattern: false, extra: { session: { disable_quant_qdq: '1' } } },
     progress_callback: p => {
       if (p.status !== 'progress' || !p.total) return;
       files.set(p.file, [p.loaded, p.total]);

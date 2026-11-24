@@ -463,7 +463,7 @@ function dlProgress(loaded, total){ showDl(loaded / total); setStatus(`Baixando 
 function workerSession(v){
   return new Promise((resolve, reject) => {
     let w;
-    try{ w = new Worker('./tts-worker.js?v=1', { type: 'module' }); }catch(e){ reject(e); return; }
+    try{ w = new Worker('./tts-worker.js?v=2', { type: 'module' }); }catch(e){ reject(e); return; }
     let seq = 0, watchdog, ready = false;
     const calls = new Map();
     const fail = err => {
@@ -515,6 +515,12 @@ async function mainSession(v){
 async function getSession(){
   if (session && sessionVoice === voiceId) return session;
   if (sessionPromise && sessionVoice === voiceId) return sessionPromise;
+  // com tradução ligada, espera o tradutor ficar pronto e o primeiro trecho traduzido antes de carregar a voz
+  if (needsTr() && chunks[idx] && !chunks[idx].pt){ await trWait(idx); if (session && sessionVoice === voiceId) return session; if (sessionPromise && sessionVoice === voiceId) return sessionPromise; }
+  while (trBusy && trLoadingModel) await new Promise(r => setTimeout(r, 300));
+  if (session && sessionVoice === voiceId) return session;
+  if (sessionPromise && sessionVoice === voiceId) return sessionPromise;
+  ttsLoading = true;
   sessionVoice = voiceId;
   sessionPromise = (async () => {
     let s = null;
@@ -523,13 +529,14 @@ async function getSession(){
       catch(e){ console.warn('Processo de voz separado falhou; usando o modo normal.', e); workerBroken = true; }
     }
     if (!s) s = await mainSession(voiceId);
+    ttsLoading = false;
     showDl(null);
     if (sessionVoice !== voiceId){ s.close(); return getSession(); }
     session = s; setStatus('');
     return s;
   })();
   try { return await sessionPromise; }
-  catch(e){ sessionPromise = null; sessionVoice = null; throw e; }
+  catch(e){ ttsLoading = false; sessionPromise = null; sessionVoice = null; throw e; }
 }
 
 async function pump(){
@@ -789,7 +796,7 @@ async function aiSummarize(b, level, token){
 // Traduz alguns trechos à frente da posição atual e guarda tudo no aparelho, para não traduzir de novo.
 const TR_AHEAD = 50;
 const TR_LIB = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
-let trBusy = false, trGen = 0, trWorker = null, trWorkerBroken = false, trMainP = null;
+let trBusy = false, trGen = 0, trWorker = null, trWorkerBroken = false, trMainP = null, trLoadingModel = false, trReady = false;
 const trWaiters = new Map();
 const trEngine = () => (view.trEngine === 'ai' ? 'ai' : 'auto');
 const needsTr = () => !!book && book.lang === 'en' && book.trLang === 'pt' && !(view.content === 'sum' && view.engine === 'ai');
@@ -818,7 +825,7 @@ function trReset(){
 
 function trWorkerClient(){
   if (trWorker) return trWorker;
-  const w = new Worker('./translate-worker.js?v=1', { type: 'module' });
+  const w = new Worker('./translate-worker.js?v=2', { type: 'module' });
   let seq = 0; const calls = new Map();
   w.onerror = ev => {
     if (ev.preventDefault) ev.preventDefault();
@@ -847,7 +854,7 @@ async function trMainTranslate(texts){
     env.allowLocalModels = false;
     const files = new Map();
     return pipeline('translation', 'OptimaMT/en-pt', {
-      dtype: 'q8', session_options: { extra: { session: { disable_quant_qdq: '1' } } },
+      dtype: 'q8', session_options: { enableCpuMemArena: false, enableMemPattern: false, extra: { session: { disable_quant_qdq: '1' } } },
       progress_callback: p => {
         if (p.status !== 'progress' || !p.total) return;
         files.set(p.file, [p.loaded, p.total]);
@@ -907,9 +914,18 @@ async function trAI(texts){
   return out;
 }
 
+// Se o app fechar sozinho no meio da tradução (memória cheia), na próxima abertura ele volta para o
+// original em vez de tentar traduzir de novo e travar em ciclo.
+const TR_FLAG = 'trActive';
+function trMarkActive(on){ if (on && !document.hidden) ls.set(TR_FLAG, Date.now()); else ls.del(TR_FLAG); }
+document.addEventListener('visibilitychange', () => trMarkActive(trBusy && !document.hidden));
+
+let ttsLoading = false;      // enquanto a voz carrega, a tradução espera (os dois juntos estouram a memória)
+
 async function trPump(){
   if (trBusy || !needsTr()) return;
   trBusy = true;
+  trMarkActive(true);
   const g = trGen;
   try{
     while (g === trGen && needsTr()){
@@ -925,9 +941,15 @@ async function trPump(){
       const todo = [];
       batch.forEach((i, j) => { if (cached[j]) trSetChunk(i, cached[j]); else todo.push(i); });
       if (!todo.length) continue;
+      while (ttsLoading && g === trGen) await new Promise(r => setTimeout(r, 300));
+      if (g !== trGen) break;
       if (!$('status').textContent) setStatus('Traduzindo…');
       $('trPill').classList.remove('hidden');
-      const outs = trEngine() === 'ai' ? await trAI(todo.map(i => chunks[i].t)) : await trAuto(todo.map(i => chunks[i].t));
+      if (trEngine() === 'auto' && !trReady) trLoadingModel = true;
+      let outs;
+      try{ outs = trEngine() === 'ai' ? await trAI(todo.map(i => chunks[i].t)) : await trAuto(todo.map(i => chunks[i].t)); }
+      finally{ trLoadingModel = false; }
+      if (trEngine() === 'auto') trReady = true;
       if (g !== trGen) break;
       todo.forEach((i, j) => {
         const o = outs[j];
@@ -939,6 +961,7 @@ async function trPump(){
       });
       showDl(null);
       if (/^(Traduzindo|Baixando o tradutor)/.test($('status').textContent)) setStatus('');
+      if (ls.get('trCrashes', 0)) ls.del('trCrashes');      // traduziu sem travar: zera o histórico
     }
   }catch(e){
     console.error(e);
@@ -955,6 +978,7 @@ async function trPump(){
     }
   }finally{
     trBusy = false;
+    trMarkActive(false);
     $('trPill').classList.add('hidden');
     if (g !== trGen && needsTr()) trPump();
   }
@@ -1129,7 +1153,7 @@ function openBook(b){
   if (view.content === 'sum' && view.engine === 'ai' && !(b.ai && b.ai[view.level]) && !ls.get('apiKey', '')) view.engine = 'auto';
   syncSegs();
   loadContent();
-  if (view.mode === 'listen') getSession().catch(() => {});
+  if (view.mode === 'listen' && !needsTr()) getSession().catch(() => {});
 }
 
 async function handle(file){
@@ -1361,13 +1385,18 @@ $('segLang').onclick = e => {
   if (cur === b.dataset.v && !(b.dataset.v === 'pt' && /Não consegui traduzir/.test($('status').textContent))) return;
   save(true);
   book.trLang = b.dataset.v; db.put(stripDerived(book));
+  // antes de carregar o tradutor pela primeira vez, tira a voz da memória (volta a carregar depois)
+  if (b.dataset.v === 'pt' && trEngine() === 'auto' && !trReady && session){
+    if (playing) pause();
+    session.close(); session = null; sessionVoice = null; sessionPromise = null;
+  }
   setStatus(''); syncSegs(); loadContent();
 };
 bindSeg('segLevel', 'level', loadContent);
 bindSeg('segEngine', 'engine', loadContent);
 bindSeg('segMode', 'mode', () => {
   if (view.mode === 'read'){ if (playing) pause(); mark(true); }
-  else { getSession().catch(() => {}); mark(true); }
+  else { if (!needsTr()) getSession().catch(() => {}); mark(true); }
   updateInfo();
 });
 
@@ -1466,6 +1495,14 @@ syncSegs();
 (async () => {
   const lastId = ls.get('lastBook', null);
   const last = lastId && await db.get(lastId);
+  if (ls.get(TR_FLAG, null)){
+    ls.del(TR_FLAG);
+    const n = ls.get('trCrashes', 0) + 1; ls.set('trCrashes', n);
+    if (last && last.trLang === 'pt'){ last.trLang = 'orig'; await db.put(last); }
+    setTimeout(() => setStatus(n >= 2
+      ? 'A tradução automática fechou o app de novo: este iPhone não tem memória livre suficiente para ela. Voltei para o original. Feche outros apps e tente de novo, ou use a tradução com IA.'
+      : 'O app fechou sozinho enquanto traduzia (falta de memória). Voltei para o original. Toque em Português para tentar de novo.'), 3200);
+  }
   if (last) openBook(last); else showLibrary();
 })();
 </script>
