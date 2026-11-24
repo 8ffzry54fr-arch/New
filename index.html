@@ -1495,6 +1495,12 @@ syncSegs();
 (async () => {
   const lastId = ls.get('lastBook', null);
   const last = lastId && await db.get(lastId);
+  // endereço de emergência: .../New/#original abre o livro no idioma original, sem traduzir
+  if (location.hash === '#original'){
+    ls.del(TR_FLAG);
+    if (last && last.trLang === 'pt'){ last.trLang = 'orig'; await db.put(last); }
+    try{ history.replaceState(null, '', location.pathname); }catch(e){}
+  }
   if (ls.get(TR_FLAG, null)){
     ls.del(TR_FLAG);
     const n = ls.get('trCrashes', 0) + 1; ls.set('trCrashes', n);
