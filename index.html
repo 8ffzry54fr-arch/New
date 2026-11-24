@@ -83,6 +83,12 @@
   .row .lbl{font-size:13px;color:var(--muted);width:64px;flex:none}
   .row .seg{flex:1}
   #sumOpts{margin-bottom:6px}
+  #langOpts{margin-bottom:4px}
+  .s.untr{opacity:.45;font-style:italic}
+  #trPill{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:8;
+    background:var(--bar);color:var(--bar-ink);font:500 13px Inter,sans-serif;padding:7px 14px;border-radius:999px;
+    box-shadow:0 4px 14px rgba(0,0,0,.2);display:flex;gap:8px;align-items:center}
+  #trPill::before{content:"";width:10px;height:10px;border-radius:50%;border:2px solid var(--bar-ink);border-top-color:transparent;animation:spin 1s linear infinite}
   #fontRow{justify-content:flex-end;margin:-2px 0 10px;gap:8px}
   #fontRow .lbl{width:auto;flex:1}
   #text{background:var(--paper);border:1px solid var(--line);border-radius:16px;
@@ -256,6 +262,17 @@
   <section id="reader" class="hidden">
     <div id="meta"><div class="title" id="mTitle"></div><div class="sub" id="mSub"></div></div>
 
+    <div id="langOpts" class="hidden">
+      <div class="seg" id="segLang">
+        <button data-v="orig">Original (inglês)</button>
+        <button data-v="pt">Português</button>
+      </div>
+      <div class="row hidden" id="trRow"><span class="lbl">Tradução</span>
+        <div class="seg small" id="segTr">
+          <button data-v="auto">Automática</button><button data-v="ai">IA (Claude)</button>
+        </div>
+      </div>
+    </div>
     <div class="seg" id="segContent">
       <button data-v="full">Livro completo</button>
       <button data-v="sum">Resumo</button>
@@ -330,6 +347,8 @@
   </form>
 </div>
 
+<div id="trPill" class="hidden">Traduzindo…</div>
+
 <div id="sheet" class="hidden">
   <div class="card">
     <h3>Aparência</h3>
@@ -340,7 +359,7 @@
     <hr>
     <h3>IA (Claude): resumo e chat</h3>
     <p>O resumo automático é grátis e feito no próprio celular. O resumo com IA fica mais bem escrito e o chat responde perguntas sobre o livro, mas precisa de uma chave da API da Anthropic (console.anthropic.com), que é paga por uso.</p>
-    <p><b>Atenção:</b> ao usar o resumo com IA ou o chat, o texto do livro é enviado à Anthropic para ser resumido. A chave fica salva só neste aparelho.</p>
+    <p><b>Atenção:</b> ao usar o resumo com IA, a tradução com IA ou o chat, o texto do livro é enviado à Anthropic. A chave fica salva só neste aparelho.</p>
     <input id="keyInput" type="password" placeholder="Cole aqui sua chave (sk-ant-...)" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div class="acts">
       <button class="btn" id="keyDel">Remover chave</button>
@@ -351,7 +370,7 @@
 </div>
 
 <script type="module">
-import { deriveSections, buildChunks, summarize, RATIOS, keywords, repairText, fixLigatures } from './texto.js?v=5';
+import { deriveSections, buildChunks, summarize, RATIOS, keywords, repairText, fixLigatures, detectLang, splitSentences } from './texto.js?v=6';
 
 const $ = id => document.getElementById(id);
 const AHEAD = 45;              // ~20 min de áudio pronto à frente, para aguentar a tela bloqueada
@@ -385,16 +404,20 @@ const db = {
   _p: null,
   open(){
     return this._p ||= new Promise((res, rej) => {
-      const r = indexedDB.open('leitor', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('books', {keyPath: 'id'});
+      const r = indexedDB.open('leitor', 2);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', {keyPath: 'id'});
+        if (!d.objectStoreNames.contains('tr')) d.createObjectStore('tr');     // traduções já feitas
+      };
       r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
     });
   },
-  async tx(mode, fn){
+  async tx(mode, fn, store = 'books'){
     try{
       const d = await this.open();
       return await new Promise((res, rej) => {
-        const t = d.transaction('books', mode); const st = t.objectStore('books');
+        const t = d.transaction(store, mode); const st = t.objectStore(store);
         const out = fn(st); t.oncomplete = () => res(out && out.result); t.onerror = () => rej(t.error);
       });
     }catch(e){ console.warn('IndexedDB', e); return null; }
@@ -402,13 +425,15 @@ const db = {
   all(){ return this.tx('readonly', s => s.getAll()); },
   get(id){ return this.tx('readonly', s => s.get(id)); },
   put(b){ return this.tx('readwrite', s => s.put(b)); },
-  del(id){ return this.tx('readwrite', s => s.delete(id)); }
+  del(id){ return this.tx('readwrite', s => s.delete(id)); },
+  trGet(k){ return this.tx('readonly', s => s.get(k), 'tr'); },
+  trPut(k, v){ return this.tx('readwrite', s => s.put(v, k), 'tr'); }
 };
 try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(e){}
 
 // ---------------- Estado ----------------
 let book = null, chunks = [], idx = 0, playing = false, loadToken = 0;
-const view = Object.assign({ content: 'full', level: 'm', engine: 'auto', mode: 'listen' }, ls.get('view', {}));
+const view = Object.assign({ content: 'full', level: 'm', engine: 'auto', mode: 'listen', trEngine: 'auto' }, ls.get('view', {}));
 let voiceId = ls.get('voice', 'pt_BR-faber-medium');
 let rate = ls.get('rate', 1);
 let fs = ls.get('fs', 19);
@@ -518,7 +543,8 @@ async function pump(){
       let next = -1;
       for (let i = idx; i < Math.min(chunks.length, idx + AHEAD); i++) if (!cache.has(i)){ next = i; break; }
       if (next < 0) break;
-      const blob = await s.predict(chunks[next].t);
+      if (needsTr() && !chunks[next].pt){ await trWait(next); if (g !== gen || !playing) break; }
+      const blob = await s.predict(textOf(chunks[next]));
       if (g !== gen) break;
       cache.set(next, URL.createObjectURL(blob));
       showBuffer();
@@ -758,12 +784,188 @@ async function aiSummarize(b, level, token){
   return out;
 }
 
+// ---------------- Tradução (inglês → português) ----------------
+// Automática: modelo OPUS-MT rodando no aparelho (translate-worker.js). IA: Claude, com a chave do usuário.
+// Traduz alguns trechos à frente da posição atual e guarda tudo no aparelho, para não traduzir de novo.
+const TR_AHEAD = 50;
+const TR_LIB = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
+let trBusy = false, trGen = 0, trWorker = null, trWorkerBroken = false, trMainP = null;
+const trWaiters = new Map();
+const trEngine = () => (view.trEngine === 'ai' ? 'ai' : 'auto');
+const needsTr = () => !!book && book.lang === 'en' && book.trLang === 'pt' && !(view.content === 'sum' && view.engine === 'ai');
+const textOf = c => (needsTr() && c.pt) ? c.pt : c.t;
+function hashText(t){ let h = 0x811c9dc5; for (let i = 0; i < t.length; i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36) + '.' + t.length; }
+const trKey = t => trEngine() + '|' + hashText(t);
+function trDlProgress(loaded, total){ showDl(loaded / total); setStatus(`Baixando o tradutor: ${Math.round(loaded / total * 100)}% (só na primeira vez, cerca de 100 MB)`); }
+
+function trSetChunk(i, pt){
+  const c = chunks[i]; if (!c) return;
+  c.pt = pt;
+  const el = $('text').querySelector(`.s[data-i="${i}"]`);
+  if (el){ el.textContent = pt + ' '; el.classList.remove('untr'); }
+  const ws = trWaiters.get(i);
+  if (ws){ trWaiters.delete(i); ws.forEach(r => r()); }
+}
+function trWait(i){
+  if (!needsTr() || (chunks[i] && chunks[i].pt)) return Promise.resolve();
+  return new Promise(r => { if (!trWaiters.has(i)) trWaiters.set(i, []); trWaiters.get(i).push(r); trPump(); });
+}
+function trReset(){
+  trGen++;
+  for (const ws of trWaiters.values()) ws.forEach(r => r());
+  trWaiters.clear();
+}
+
+function trWorkerClient(){
+  if (trWorker) return trWorker;
+  const w = new Worker('./translate-worker.js?v=1', { type: 'module' });
+  let seq = 0; const calls = new Map();
+  w.onerror = ev => {
+    if (ev.preventDefault) ev.preventDefault();
+    trWorkerBroken = true; trWorker = null;
+    try{ w.terminate(); }catch(e){}
+    for (const c of calls.values()) c.reject(new Error(ev.message || 'erro no processo de tradução'));
+    calls.clear();
+  };
+  w.onmessage = ev => {
+    const m = ev.data, c = calls.get(m.id); if (!c) return;
+    if (m.type === 'progress'){ trDlProgress(m.loaded, m.total); return; }
+    calls.delete(m.id);
+    if (m.type === 'error') c.reject(new Error(m.message)); else c.resolve(m);
+  };
+  trWorker = { call: (type, data) => new Promise((res, rej) => {
+    const id = ++seq; calls.set(id, { resolve: res, reject: rej });
+    w.postMessage(Object.assign({ id, type }, data));
+  }) };
+  return trWorker;
+}
+
+// Plano B: se o processo separado não funcionar no aparelho, traduz na própria página
+async function trMainTranslate(texts){
+  trMainP ||= (async () => {
+    const { pipeline, env } = await import(TR_LIB);
+    env.allowLocalModels = false;
+    const files = new Map();
+    return pipeline('translation', 'OptimaMT/en-pt', {
+      dtype: 'q8', session_options: { extra: { session: { disable_quant_qdq: '1' } } },
+      progress_callback: p => {
+        if (p.status !== 'progress' || !p.total) return;
+        files.set(p.file, [p.loaded, p.total]);
+        let l = 0, t = 0; for (const [a, b] of files.values()){ l += a; t += b; }
+        trDlProgress(l, t);
+      }
+    });
+  })();
+  let tr;
+  try{ tr = await trMainP; }catch(e){ trMainP = null; throw e; }
+  const outs = [];
+  for (const text of texts){
+    const sents = splitSentences(text);
+    const res = await tr(sents.map(x => '>>pt_br<< ' + x), { max_new_tokens: 400 });
+    outs.push((Array.isArray(res) ? res : [res]).map(r => (r.translation_text || '').trim()).join(' ').replace(/\s+/g, ' ').trim());
+  }
+  return outs;
+}
+
+async function trAuto(texts){
+  if (!trWorkerBroken && 'Worker' in window){
+    try{ return (await trWorkerClient().call('translate', { texts })).outs; }
+    catch(e){
+      if (!trWorkerBroken) throw e;
+      console.warn('Tradutor em processo separado falhou; usando o modo normal.', e);
+    }
+  }
+  return trMainTranslate(texts);
+}
+
+async function trAI(texts){
+  const key = ls.get('apiKey', '');
+  if (!key) throw new Error('falta a chave da API');
+  const list = texts.map((t, i) => `[${i + 1}] ${t}`).join('\n');
+  const prompt = `Traduza para o português do Brasil cada trecho numerado abaixo, do livro "${book.title}". ` +
+    `Mantenha o sentido, o tom e o estilo do autor, com linguagem natural de livro publicado no Brasil. ` +
+    `Não junte nem separe trechos e não comente nada. Responda só com as traduções, uma por linha, ` +
+    `cada uma começando com a mesma marcação [n] do original.\n\n${list}`;
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify({ model: AI_MODEL, max_tokens: Math.min(8000, Math.round(list.length / 2) + 500),
+      messages: [{ role: 'user', content: prompt }] })
+  });
+  if (!r.ok){
+    const e = await r.json().catch(() => ({}));
+    throw new Error((e.error && e.error.message) || ('erro ' + r.status));
+  }
+  const j = await r.json();
+  const txt = (j.content || []).map(c => c.text || '').join('');
+  const out = new Array(texts.length).fill(null);
+  for (const m of txt.matchAll(/\[(\d+)\]\s*([\s\S]*?)(?=\n\s*\[\d+\]|$)/g)){
+    const k = +m[1] - 1;
+    if (k >= 0 && k < out.length && m[2].trim()) out[k] = m[2].trim().replace(/\s+/g, ' ');
+  }
+  return out;
+}
+
+async function trPump(){
+  if (trBusy || !needsTr()) return;
+  trBusy = true;
+  const g = trGen;
+  try{
+    while (g === trGen && needsTr()){
+      const maxB = trEngine() === 'ai' ? 15 : 3;
+      const batch = [];
+      for (let i = idx; i < Math.min(chunks.length, idx + TR_AHEAD) && batch.length < maxB; i++){
+        if (chunks[i].pt){ if (batch.length) break; continue; }
+        batch.push(i);
+      }
+      if (!batch.length) break;
+      const cached = await Promise.all(batch.map(i => db.trGet(trKey(chunks[i].t))));
+      if (g !== trGen) break;
+      const todo = [];
+      batch.forEach((i, j) => { if (cached[j]) trSetChunk(i, cached[j]); else todo.push(i); });
+      if (!todo.length) continue;
+      if (!$('status').textContent) setStatus('Traduzindo…');
+      $('trPill').classList.remove('hidden');
+      const outs = trEngine() === 'ai' ? await trAI(todo.map(i => chunks[i].t)) : await trAuto(todo.map(i => chunks[i].t));
+      if (g !== trGen) break;
+      todo.forEach((i, j) => {
+        const o = outs[j];
+        if (o){ trSetChunk(i, o); db.trPut(trKey(chunks[i].t), o); }
+        else {
+          chunks[i].trFail = (chunks[i].trFail || 0) + 1;
+          if (chunks[i].trFail >= 2) trSetChunk(i, chunks[i].t);      // não deu: mantém o original
+        }
+      });
+      showDl(null);
+      if (/^(Traduzindo|Baixando o tradutor)/.test($('status').textContent)) setStatus('');
+    }
+  }catch(e){
+    console.error(e);
+    if (g === trGen){
+      showDl(null);
+      if (trEngine() === 'ai'){
+        setStatus('Não consegui traduzir com a IA (' + e.message + '). Voltei para a tradução automática.');
+        view.trEngine = 'auto'; ls.set('view', view); syncSegs();
+        trBusy = false; loadContent(); return;
+      }
+      if (playing) pause();
+      trReset();
+      setStatus('Não consegui traduzir (' + e.message + '). Na primeira vez precisa de internet para baixar o tradutor; toque em Português de novo para tentar.');
+    }
+  }finally{
+    trBusy = false;
+    $('trPill').classList.add('hidden');
+    if (g !== trGen && needsTr()) trPump();
+  }
+}
+
 // ---------------- Conteúdo (livro ou resumo) ----------------
 async function loadContent(){
   if (!book) return;
   const token = ++loadToken;
   if (playing) pause();
-  clearCache(); gen++;
+  clearCache(); gen++; trReset();
   chunks = []; render();
   let secs = null;
   try{
@@ -808,6 +1010,7 @@ async function loadContent(){
   if (!chunks.length) $('text').innerHTML = '<div class="empty">Não há texto suficiente para montar este resumo.</div>';
   if (/Montando|Resumindo/.test($('status').textContent)) setStatus('');
   updateInfo(); mark(true); updateMedia();
+  if (needsTr()) trPump();
 }
 function stripDerived(b){ const c = Object.assign({}, b); delete c._derived; return c; }
 
@@ -830,7 +1033,8 @@ function render(){
   let cur = -1, para;
   const frag = document.createDocumentFragment();
   chunks.forEach((c, i) => {
-    const s = document.createElement('span'); s.className = 's'; s.dataset.i = i; s.textContent = c.t + ' ';
+    const s = document.createElement('span'); s.className = 's'; s.dataset.i = i; s.textContent = textOf(c) + ' ';
+    if (needsTr() && !c.pt) s.classList.add('untr');
     if (c.h){ const h = document.createElement('h3'); h.appendChild(s); frag.appendChild(h); cur = c.p; return; }
     if (c.p !== cur){ para = document.createElement('p'); frag.appendChild(para); cur = c.p; }
     para.appendChild(s);
@@ -851,6 +1055,7 @@ function mark(force){
       if (force || r.top < 80 || r.bottom > innerHeight - 230) el.scrollIntoView({block: force && view.mode === 'read' ? 'start' : 'center', behavior: force ? 'auto' : 'smooth'});
     }
   }
+  if (needsTr()) trPump();
   $('seek').value = idx;
   $('pos').textContent = (chunks.length ? Math.round(idx / chunks.length * 100) : 0) + '%';
   let rest = 0; for (let i = idx; i < chunks.length; i++) rest += chunks[i].t.length;
@@ -875,6 +1080,11 @@ function syncSegs(){
   const set = (id, v) => $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   set('segContent', view.content); set('segLevel', view.level); set('segEngine', view.engine); set('segMode', view.mode);
   $('sumOpts').classList.toggle('hidden', view.content !== 'sum');
+  const showLang = !!book && book.lang === 'en';
+  $('langOpts').classList.toggle('hidden', !showLang);
+  set('segLang', book && book.trLang === 'pt' ? 'pt' : 'orig');
+  set('segTr', trEngine());
+  $('trRow').classList.toggle('hidden', !(showLang && book.trLang === 'pt'));
   const reading = view.mode === 'read';
   $('player').classList.toggle('hidden', reading || !book);
   $('main').classList.toggle('reading', reading);
@@ -909,6 +1119,7 @@ async function showLibrary(){
 
 function openBook(b){
   book = b;
+  if (!b.lang){ b.lang = detectLang(b.text); db.put(stripDerived(b)); }
   $('home').classList.add('hidden'); $('reader').classList.remove('hidden'); $('text').classList.remove('hidden');
   $('libBtn').classList.remove('hidden');
   $('mTitle').textContent = b.title;
@@ -963,6 +1174,7 @@ $('keySave').onclick = () => {
   if (k) ls.set('apiKey', k); else ls.del('apiKey');
   closeSheet();
   if (k && pendingChat){ pendingChat = false; openChat(); return; }
+  if (k && pendingKeyFor === 'trEngine'){ pendingKeyFor = null; view.trEngine = 'ai'; ls.set('view', view); syncSegs(); loadContent(); return; }
   if (k && book && view.content === 'sum'){ view.engine = 'ai'; ls.set('view', view); syncSegs(); loadContent(); }
 };
 $('keyDel').onclick = () => { ls.del('apiKey'); $('keyInput').value = ''; closeSheet(); };
@@ -1130,15 +1342,27 @@ $('voice').onchange = () => {
   if (playing) startCurrent(); else getSession().catch(() => {});
 };
 
+let pendingKeyFor = null;
 function bindSeg(id, key, after){
   $(id).onclick = e => {
     const b = e.target.closest('button'); if (!b || view[key] === b.dataset.v) return;
     if (key === 'engine' && b.dataset.v === 'ai' && !ls.get('apiKey', '') && !(book && book.ai && book.ai[view.level])){ openSheet(); return; }
+    if (key === 'trEngine' && b.dataset.v === 'ai' && !ls.get('apiKey', '')){ pendingKeyFor = 'trEngine'; openSheet(); return; }
     if (book && key !== 'mode') save(true);
     view[key] = b.dataset.v; ls.set('view', view); syncSegs(); after && after();
   };
 }
 bindSeg('segContent', 'content', loadContent);
+bindSeg('segTr', 'trEngine', loadContent);
+$('segLang').onclick = e => {
+  const b = e.target.closest('button');
+  if (!b || !book) return;
+  const cur = book.trLang === 'pt' ? 'pt' : 'orig';
+  if (cur === b.dataset.v && !(b.dataset.v === 'pt' && /Não consegui traduzir/.test($('status').textContent))) return;
+  save(true);
+  book.trLang = b.dataset.v; db.put(stripDerived(book));
+  setStatus(''); syncSegs(); loadContent();
+};
 bindSeg('segLevel', 'level', loadContent);
 bindSeg('segEngine', 'engine', loadContent);
 bindSeg('segMode', 'mode', () => {

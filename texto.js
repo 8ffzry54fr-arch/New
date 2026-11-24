@@ -66,7 +66,11 @@ const STOP = new Set(('a o as os um uma uns umas de do da dos das em no na nos n
   'suas nosso nossa nossos nossas ao aos à às num numa é são era eram foi foram ser sido sendo estar está estão estava estavam esteve ' +
   'ter tem têm tinha tinham teve há havia haver pode podem podia poderia fazer faz fez feito vai vão ia então assim aqui ali lá ' +
   'porque pois quanto quanta tão tanto tanta cada outro outra outros outras mesmo mesma mesmos mesmas depois antes agora sempre ' +
-  'nunca bem mal onde enquanto embora apenas sobre quase toda dele dela deles delas nele nela disse diz ainda vez vezes coisa coisas').split(/\s+/));
+  'nunca bem mal onde enquanto embora apenas sobre quase toda dele dela deles delas nele nela disse diz ainda vez vezes coisa coisas ' +
+  // inglês, para o resumo automático funcionar também em livros em inglês
+  'the and that this these those with from into have has had was were are been being for not but you your they them their ' +
+  'there what which who whom when where why how would could should will shall can may might must about into over than then ' +
+  'just also very much more most some such only other its our ours his her hers him she he we us all any each said says one').split(/\s+/));
 
 const words = s => (s.toLowerCase().match(/\p{L}{3,}/gu) || []).filter(w => !STOP.has(w)).map(w => w.slice(0, 7));
 const sentencesOf = text => text.split(/\n\s*\n/).flatMap(par =>
@@ -163,4 +167,21 @@ export function repairText(text){
   return fixLigatures(text)
     .replace(/(\p{L})-\n\s*\n?(\p{Ll})/gu, '$1$2')
     .replace(/([^\n.!?:;"”»])\n\s*\n(?=[a-zà-ÿ0-9(,;])/g, '$1 ');
+}
+
+// ---------------- Idioma do livro ----------------
+const PT_W = new Set('de que não uma para com por mais como mas foi ele ela são está isso também seu sua quando muito nos já eu ao pelo pela entre depois sem mesmo aos ter seus quem nas esse eles você essa num nem suas meu às minha numa pelos elas qual nós lhe deles essas esses pelas este dele tu te vocês vos lhes meus minhas teu tua nosso nossa dela delas esta estes estas aquele aquela isto aquilo estou'.split(' '));
+const EN_W = new Set('the and of to in is that it was for on are with as his they be at one have this from by had not but what all were when we there can an your which their said if do will each about how up out them then she many some so these would other into has her two like him see time could no make than first been its who now people my made over did down only way find use may water long little very after words called just where most know'.split(' '));
+export function detectLang(text){
+  const ws = (text.slice(0, 40000).toLowerCase().match(/\p{L}+/gu) || []);
+  let pt = 0, en = 0;
+  for (const w of ws){ if (PT_W.has(w)) pt++; if (EN_W.has(w)) en++; }
+  if (en > pt * 1.5 && en > 30) return 'en';
+  if (pt >= en) return 'pt';
+  return 'other';
+}
+
+// Frases de um trecho (para traduzir frase a frase)
+export function splitSentences(t){
+  return (t.match(/[^.!?…]+(?:[.!?…]+["”»')\]]*|$)\s*/g) || [t]).map(x => x.trim()).filter(Boolean);
 }
