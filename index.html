@@ -794,12 +794,13 @@ async function aiSummarize(b, level, token){
 // ---------------- Tradução (inglês → português) ----------------
 // Automática: modelo OPUS-MT rodando no aparelho (translate-worker.js). IA: Claude, com a chave do usuário.
 // Traduz alguns trechos à frente da posição atual e guarda tudo no aparelho, para não traduzir de novo.
+const TR_ENABLED = false;      // tradução desligada por enquanto (melhoria futura: app nativo ou IA)
 const TR_AHEAD = 50;
 const TR_LIB = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
 let trBusy = false, trGen = 0, trWorker = null, trWorkerBroken = false, trMainP = null, trLoadingModel = false, trReady = false;
 const trWaiters = new Map();
 const trEngine = () => (view.trEngine === 'ai' ? 'ai' : 'auto');
-const needsTr = () => !!book && book.lang === 'en' && book.trLang === 'pt' && !(view.content === 'sum' && view.engine === 'ai');
+const needsTr = () => TR_ENABLED && !!book && book.lang === 'en' && book.trLang === 'pt' && !(view.content === 'sum' && view.engine === 'ai');
 const textOf = c => (needsTr() && c.pt) ? c.pt : c.t;
 function hashText(t){ let h = 0x811c9dc5; for (let i = 0; i < t.length; i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36) + '.' + t.length; }
 const trKey = t => trEngine() + '|' + hashText(t);
@@ -1104,7 +1105,7 @@ function syncSegs(){
   const set = (id, v) => $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   set('segContent', view.content); set('segLevel', view.level); set('segEngine', view.engine); set('segMode', view.mode);
   $('sumOpts').classList.toggle('hidden', view.content !== 'sum');
-  const showLang = !!book && book.lang === 'en';
+  const showLang = TR_ENABLED && !!book && book.lang === 'en';
   $('langOpts').classList.toggle('hidden', !showLang);
   set('segLang', book && book.trLang === 'pt' ? 'pt' : 'orig');
   set('segTr', trEngine());
