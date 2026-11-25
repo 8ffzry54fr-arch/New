@@ -1383,6 +1383,17 @@ $('segLang').onclick = e => {
   if (!b || !book) return;
   const cur = book.trLang === 'pt' ? 'pt' : 'orig';
   if (cur === b.dataset.v && !(b.dataset.v === 'pt' && /Não consegui traduzir/.test($('status').textContent))) return;
+  // Se a tradução automática já fechou o app neste aparelho, pede confirmação antes de tentar de novo
+  if (b.dataset.v === 'pt' && trEngine() === 'auto' && ls.get('trCrashes', 0) >= 1){
+    const t = ls.get('trWarned', 0);
+    if (Date.now() - t > 15000){
+      ls.set('trWarned', Date.now());
+      setStatus('Atenção: a tradução automática já fechou o app neste iPhone por falta de memória. Ela é pesada demais para este aparelho. Toque em Português de novo em até 15 segundos para tentar mesmo assim, ou use a tradução com IA.');
+      $('status').scrollIntoView({ block: 'center' });
+      return;
+    }
+    ls.del('trWarned');
+  }
   save(true);
   book.trLang = b.dataset.v; db.put(stripDerived(book));
   // antes de carregar o tradutor pela primeira vez, tira a voz da memória (volta a carregar depois)
